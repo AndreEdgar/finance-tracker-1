@@ -139,7 +139,20 @@ registerBtn?.addEventListener('click', async () => {
   }
 });
 
-logoutBtn?.addEventListener('click', () => signOut(auth));
+//logoutBtn?.addEventListener('click', () => signOut(auth));
+
+logoutBtn?.addEventListener('click', async () => {
+  await signOut(auth);
+
+  // Clear login fields
+  emailInput.value = "";
+  passwordInput.value = "";
+
+  // Also clear status messages if any
+  if (authStatus) authStatus.textContent = "";
+
+  console.log("User signed out and fields cleared");
+});
 
 function setAuthStatus(msg) {
   if (authStatus) authStatus.textContent = msg;
@@ -206,6 +219,13 @@ onAuthStateChanged(auth, (user) => {
     appMain?.classList.add('hidden');
     appFooter?.classList.add('hidden');
     authBox?.classList.remove('hidden');
+    
+    
+    // Clear fields on showing login box
+    emailInput.value = "";
+    passwordInput.value = "";
+    if (authStatus) authStatus.textContent = "";
+    
     transactions = [];
     render();
   }
