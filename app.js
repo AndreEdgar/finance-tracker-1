@@ -106,6 +106,7 @@ const categorySelect = document.querySelector('#category');
 const newCategoryNameInput = document.querySelector('#newCategoryName');
 const addCategoryBtn = document.querySelector('#addCategoryBtn');
 const categoryListDiv = document.querySelector('#categoryList');
+const newCategoryKindSelect = document.querySelector('#newCategoryKind');
 
 /* ---------------------------
    Utility functions
@@ -137,7 +138,7 @@ let categories = [];      // array of { id, name, userId, createdAt }
 let unsubscribeCats = null;
 
 // Start/stop categories realtime listener when user signs in/out
-function startRealtimeCategories(user) {
+/*function startRealtimeCategories(user) {
   if (unsubscribeCats) { unsubscribeCats(); unsubscribeCats = null; }
   const cq = query(
     collection(db, 'categories'),
@@ -158,6 +159,40 @@ function stopRealtimeCategories() {
   if (unsubscribeCats) { unsubscribeCats(); unsubscribeCats = null; }
   categories = [];
   renderCategoryOptions();
+  renderCategoryList();
+}
+*/
+
+function startRealtimeCategories(user) {
+  if (unsubscribeCats) { unsubscribeCats(); unsubscribeCats = null; }
+  const cq = query(
+    collection(db, 'categories'),
+    where('userId', '==', user.uid),
+    orderBy('name', 'asc')
+  );
+  unsubscribeCats = onSnapshot(cq, (snap) => {
+    categories = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        name: data.name || '',
+        kind: data.kind || 'both',  // <- migrate old docs gracefully
+        userId: data.userId,
+        createdAt: data.createdAt
+      };
+    });
+    renderCategoryOptions(typeInput.value);
+    renderCategoryList();
+  }, (err) => {
+    console.error('[RT] categories error', err);
+    setAuthStatus('Could not load categories: ' + err.message);
+  });
+}
+
+function stopRealtimeCategories() {
+  if (unsubscribeCats) { unsubscribeCats(); unsubscribeCats = null; }
+  categories = [];
+  renderCategoryOptions(typeInput.value);
   renderCategoryList();
 }
 
@@ -318,6 +353,7 @@ function resetForm() {
   typeInput.value = 'income';
 }
 
+/*Updated
 function startEdit(id) {
   const t = transactions.find(x => x.id === id);
   if (!t) return;
@@ -343,11 +379,91 @@ function startEdit(id) {
     }
     categorySelect.value = t.category;
   }
-
+  
   amountInput.value = String(t.amount);
   descInput.value = t.description || '';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+  */
+  
+  function startEdit(id) {
+    const t = transactions.find(x => x.id === id);
+    if (!t) return;
+    editingId = id;
+    formTitle.textContent = 'Edit Transaction';
+    cancelEditBtn.classList.remove('hidden');
+
+    dateInput.value = t.date;
+    typeInput.value = t.type;
+
+    // Render options based on the transaction's type
+    renderCategoryOptions(typeInput.value);
+
+    // If the category isn't in filtered options (because its kind doesn't match), add a temporary option
+    if (categorySelect) {
+      const hasOpt = [...categorySelect.options].some(o => o.value === t.category);
+      if (!hasOpt && t.category) {
+        const tempOpt = document.createElement('option');
+        tempOpt.value = t.category;
+        tempOpt.textContent = `${t.category} (not available for this type)`;
+        categorySelect.appendChild(tempOpt);
+      }
+      categorySelect.value = t.category || '';
+    }
+
+    amountInput.value = String(t.amount);
+    descInput.value = t.description || '';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+
+  function getCategoriesForType(currentType) {
+    // Show categories where kind == currentType or kind == 'both'
+    return categories.filter(c => c.kind === 'both' || c.kind === currentType);
+  }
+
+  function renderCategoryOptions(currentType = 'income') {
+    if (!categorySelect) return;
+    const valid = getCategoriesForType(currentType);
+
+    categorySelect.innerHTML = '';
+
+    if (valid.length === 0) {
+      const ph = document.createElement('option');
+      ph.value = '';
+      ph.textContent = 'No categories for this type. Add one below.';
+      ph.disabled = true;
+      ph.selected = true;
+      categorySelect.appendChild(ph);
+      return;
+    }
+
+    const ph = document.createElement('option');
+    ph.value = '';
+    ph.textContent = 'Select category...';
+    ph.disabled = true;
+    ph.selected = true;
+    categorySelect.appendChild(ph);
+
+    for (const c of valid) {
+      const opt = document.createElement('option');
+      opt.value = c.name;
+      opt.textContent = c.name;
+      categorySelect.appendChild(opt);
+    }
+  }
+
+  // When the user changes Type (Income/Expense), refresh dropdown
+  typeInput?.addEventListener('change', () => {
+    renderCategoryOptions(typeInput.value);
+    // If previously selected category is invalid for new type, clear selection
+    if (categorySelect && categorySelect.value) {
+      const stillValid = getCategoriesForType(typeInput.value)
+        .some(c => c.name === categorySelect.value);
+      if (!stillValid) categorySelect.value = '';
+    }
+  });
+``
 
 /* ---------------------------
    Rendering & filters
@@ -448,7 +564,7 @@ function render() {
   }
 }
 
-
+/*
 function renderCategoryOptions() {
   if (!categorySelect) return;
   categorySelect.innerHTML = '';
@@ -472,7 +588,8 @@ function renderCategoryOptions() {
   // If editing a transaction, keep its category selected
   // (The editing function sets the select value explicitly)
 }
-
+*/
+/* Updated
 function renderCategoryList() {
   if (!categoryListDiv) return;
   if (categories.length === 0) {
@@ -517,8 +634,81 @@ function renderCategoryList() {
   categoryListDiv.innerHTML = '';
   categoryListDiv.appendChild(table);
 }
+*/
 
+function renderCategoryList() {
+  if (!categoryListDiv) return;
 
+  if (categories.length === 0) {
+    categoryListDiv.innerHTML = '<p class="note">No categories yet. Add your first one above.</p>';
+    return;
+  }
+
+  const table = document.createElement('table');
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Kind</th>
+        <th style="width:160px;">Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tb = table.querySelector('tbody');
+
+  for (const c of categories) {
+    const tr = document.createElement('tr');
+
+    const tdName = document.createElement('td');
+    tdName.textContent = c.name;
+
+    const tdKind = document.createElement('td');
+    const kindSel = document.createElement('select');
+    ['income','expense','both'].forEach(k => {
+      const opt = document.createElement('option');
+      opt.value = k; opt.textContent = k[0].toUpperCase() + k.slice(1);
+      if (c.kind === k) opt.selected = true;
+      kindSel.appendChild(opt);
+    });
+    kindSel.addEventListener('change', async () => {
+      try {
+        await updateDoc(doc(db, 'categories', c.id), { kind: kindSel.value });
+        // Re-render dropdown in case current type was affected
+        renderCategoryOptions(typeInput.value);
+      } catch (e) {
+        alert('Update kind failed: ' + e.message);
+      }
+    });
+    tdKind.appendChild(kindSel);
+
+    const tdActions = document.createElement('td');
+    const delBtn = document.createElement('button');
+    delBtn.className = 'small secondary';
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', async () => {
+      if (confirm(`Delete category "${c.name}"?`)) {
+        try {
+          await deleteDoc(doc(db, 'categories', c.id));
+          renderCategoryOptions(typeInput.value);
+        } catch (e) {
+          alert('Delete failed: ' + e.message);
+        }
+      }
+    });
+
+    tdActions.appendChild(delBtn);
+    tr.appendChild(tdName);
+    tr.appendChild(tdKind);
+    tr.appendChild(tdActions);
+    tb.appendChild(tr);
+  }
+
+  categoryListDiv.innerHTML = '';
+  categoryListDiv.appendChild(table);
+}
+
+/*
 addCategoryBtn?.addEventListener('click', async () => {
   const user = auth.currentUser;
   if (!user) return setAuthStatus('Please sign in.');
@@ -541,6 +731,33 @@ addCategoryBtn?.addEventListener('click', async () => {
     alert('Add category failed: ' + e.message);
   }
 });
+*/
+
+addCategoryBtn?.addEventListener('click', async () => {
+  const user = auth.currentUser;
+  if (!user) return setAuthStatus('Please sign in.');
+
+  const name = (newCategoryNameInput.value || '').trim();
+  const kind = newCategoryKindSelect.value || 'both';
+  if (!name) return alert('Please enter a category name.');
+
+  // Prevent duplicates by name (case-insensitive), regardless of kind
+  const exists = categories.some(c => c.name.toLowerCase() === name.toLowerCase());
+  if (exists) return alert('This category name already exists.');
+
+  try {
+    await addDoc(collection(db, 'categories'), {
+      name, kind, userId: user.uid, createdAt: serverTimestamp()
+    });
+    // Clear and refresh
+    newCategoryNameInput.value = '';
+    // If kind matches current type, keep dropdown populated
+    renderCategoryOptions(typeInput.value);
+  } catch (e) {
+    alert('Add category failed: ' + e.message);
+  }
+});
+
 /*
 const t = {
   date: dateInput.value,
