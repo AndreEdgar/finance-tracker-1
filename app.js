@@ -541,7 +541,7 @@ addCategoryBtn?.addEventListener('click', async () => {
     alert('Add category failed: ' + e.message);
   }
 });
-
+/*
 const t = {
   date: dateInput.value,
   type: typeInput.value === 'income' ? 'income' : 'expense',
@@ -551,7 +551,7 @@ const t = {
   userId: user.uid,
   createdAt: serverTimestamp()
 };
-
+*/
 /* ---------------------------
    Filters & Export/Import events
 ---------------------------- */
