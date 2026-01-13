@@ -63,10 +63,19 @@
               <option value="expense">Expense</option>
             </select>
           </div>
-          <div class="field">
+          <!--<div class="field">
             <label for="category">Category</label>
             <input type="text" id="category" name="category" placeholder="e.g., Salary, Rent" required />
           </div>
+           -->
+          
+          <div class="field">
+            <label for="category">Category</label>
+            <select id="category" name="category" required>
+              <!-- Options will be injected by JS -->
+            </select>
+          </div>
+
           <div class="field">
             <label for="amount">Amount</label>
             <input type="number" id="amount" name="amount" step="0.01" min="0.01" required />
@@ -127,6 +136,26 @@
           </tbody>
         </table>
       </div>
+    </section>
+
+    <section class="card">
+      <h2>Manage Categories</h2>
+
+      <div class="grid">
+        <div class="field full">
+          <label for="newCategoryName">New category</label>
+          <input type="text" id="newCategoryName" placeholder="e.g., Salary, Rent, Groceries" />
+        </div>
+      </div>
+      <div class="actions">
+        <button id="addCategoryBtn" class="primary">Add Category</button>
+      </div>
+
+      <h3 style="margin-top:16px;">Your categories</h3>
+      <div id="categoryList" class="tableWrap">
+        <!-- List populated by JS -->
+      </div>
+      <p class="note">Categories are per account and sync across your devices.</p>
     </section>
 
     <!-- Backup & Export -->

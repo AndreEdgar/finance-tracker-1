@@ -101,6 +101,12 @@ const exportJsonBtn = $('#exportJson');
 const exportCsvBtn = $('#exportCsv');
 const importJsonInput = $('#importJson');
 
+// Category dropdown + manager
+const categorySelect = document.querySelector('#category');
+const newCategoryNameInput = document.querySelector('#newCategoryName');
+const addCategoryBtn = document.querySelector('#addCategoryBtn');
+const categoryListDiv = document.querySelector('#categoryList');
+
 /* ---------------------------
    Utility functions
 ---------------------------- */
@@ -126,6 +132,34 @@ loginBtn?.addEventListener('click', async () => {
     setAuthStatus('Sign-in failed: ' + e.message);
   }
 });
+
+let categories = [];      // array of { id, name, userId, createdAt }
+let unsubscribeCats = null;
+
+// Start/stop categories realtime listener when user signs in/out
+function startRealtimeCategories(user) {
+  if (unsubscribeCats) { unsubscribeCats(); unsubscribeCats = null; }
+  const cq = query(
+    collection(db, 'categories'),
+    where('userId', '==', user.uid),
+    orderBy('name', 'asc') // alphabetic
+  );
+  unsubscribeCats = onSnapshot(cq, (snap) => {
+    categories = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderCategoryOptions();
+    renderCategoryList();
+  }, (err) => {
+    console.error('[RT] categories error', err);
+    setAuthStatus('Could not load categories: ' + err.message);
+  });
+}
+
+function stopRealtimeCategories() {
+  if (unsubscribeCats) { unsubscribeCats(); unsubscribeCats = null; }
+  categories = [];
+  renderCategoryOptions();
+  renderCategoryList();
+}
 
 registerBtn?.addEventListener('click', async () => {
   const email = emailInput.value.trim();
@@ -213,9 +247,11 @@ onAuthStateChanged(auth, (user) => {
     filterTypeInput.value = 'all';
     // Start listening to data
     startRealtime(user);
+    startRealtimeCategories(user);
   } else {
     // Hide app
     stopRealtime();
+    stopRealtimeCategories();
     appMain?.classList.add('hidden');
     appFooter?.classList.add('hidden');
     authBox?.classList.remove('hidden');
@@ -291,7 +327,23 @@ function startEdit(id) {
 
   dateInput.value = t.date;
   typeInput.value = t.type;
-  categoryInput.value = t.category;
+  
+  //old:
+  //categoryInput.value = t.category;
+  
+  // Ensure the category option exists; if user deleted it, still show as selected temporarily
+  renderCategoryOptions();
+  if (categorySelect) {
+    // If the category no longer exists, add it as a temporary option
+    if (![...categorySelect.options].some(o => o.value === t.category)) {
+      const opt = document.createElement('option');
+      opt.value = t.category;
+      opt.textContent = t.category + ' (deleted)';
+      categorySelect.appendChild(opt);
+    }
+    categorySelect.value = t.category;
+  }
+
   amountInput.value = String(t.amount);
   descInput.value = t.description || '';
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -395,6 +447,110 @@ function render() {
     tbody.appendChild(tr);
   }
 }
+
+
+function renderCategoryOptions() {
+  if (!categorySelect) return;
+  categorySelect.innerHTML = '';
+
+  // Add a placeholder option
+  const ph = document.createElement('option');
+  ph.value = '';
+  ph.textContent = 'Select category...';
+  ph.disabled = true;
+  ph.selected = true;
+  categorySelect.appendChild(ph);
+
+  // Add each category
+  for (const c of categories) {
+    const opt = document.createElement('option');
+    opt.value = c.name;
+    opt.textContent = c.name;
+    categorySelect.appendChild(opt);
+  }
+
+  // If editing a transaction, keep its category selected
+  // (The editing function sets the select value explicitly)
+}
+
+function renderCategoryList() {
+  if (!categoryListDiv) return;
+  if (categories.length === 0) {
+    categoryListDiv.innerHTML = '<p class="note">No categories yet. Add your first one above.</p>';
+    return;
+  }
+
+  const table = document.createElement('table');
+  table.innerHTML = `
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th style="width:120px;">Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  `;
+  const tbody = table.querySelector('tbody');
+
+  for (const c of categories) {
+    const tr = document.createElement('tr');
+    const tdName = document.createElement('td');
+    tdName.textContent = c.name;
+
+    const tdActions = document.createElement('td');
+    const delBtn = document.createElement('button');
+    delBtn.className = 'small secondary';
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', async () => {
+      if (confirm(`Delete category "${c.name}"?`)) {
+        try { await deleteDoc(doc(db, 'categories', c.id)); }
+        catch (e) { alert('Delete failed: ' + e.message); }
+      }
+    });
+
+    tdActions.appendChild(delBtn);
+    tr.appendChild(tdName);
+    tr.appendChild(tdActions);
+    tbody.appendChild(tr);
+  }
+
+  categoryListDiv.innerHTML = '';
+  categoryListDiv.appendChild(table);
+}
+
+
+addCategoryBtn?.addEventListener('click', async () => {
+  const user = auth.currentUser;
+  if (!user) return setAuthStatus('Please sign in.');
+
+  const name = (newCategoryNameInput.value || '').trim();
+  if (!name) return alert('Please enter a category name.');
+
+  // Prevent duplicates (case-insensitive)
+  const exists = categories.some(c => c.name.toLowerCase() === name.toLowerCase());
+  if (exists) return alert('This category already exists.');
+
+  try {
+    await addDoc(collection(db, 'categories'), {
+      name,
+      userId: user.uid,
+      createdAt: serverTimestamp()
+    });
+    newCategoryNameInput.value = '';
+  } catch (e) {
+    alert('Add category failed: ' + e.message);
+  }
+});
+
+const t = {
+  date: dateInput.value,
+  type: typeInput.value === 'income' ? 'income' : 'expense',
+  category: (categorySelect.value || '').trim(),   // <-- changed
+  description: (descInput.value || '').trim(),
+  amount: Number(amountInput.value),
+  userId: user.uid,
+  createdAt: serverTimestamp()
+};
 
 /* ---------------------------
    Filters & Export/Import events
