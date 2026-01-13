@@ -1,364 +1,446 @@
 
-// Simple income & expense tracker using localStorage.
-// Everything is commented for beginner-friendly understanding.
+// app.js — Finance Tracker with Firebase Auth + Firestore (vanilla JS, no frameworks)
 
-(() => {
-  const STORAGE_KEY = 'finance.transactions.v1';
-  const CURRENCY_SYMBOL = 'R'; // Change to your preferred symbol: '$', '€', '£', 'R', etc.
+/* ---------------------------
+   Firebase (ES modules via CDN)
+---------------------------- */
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
+import {
+  getAuth, onAuthStateChanged, signInWithEmailAndPassword,
+  createUserWithEmailAndPassword, signOut
+} from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
+import {
+  getFirestore, collection, addDoc, doc, updateDoc, deleteDoc,
+  query, where, orderBy, onSnapshot, enableIndexedDbPersistence,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
 
-  // -------------------------------
-  // Utilities
-  // -------------------------------
-  const $ = (sel) => document.querySelector(sel);
+/* ---------------------------
+   TODO: Paste your Firebase config here
+   (Find it in Firebase console → Project settings → Your apps → SDK setup)
+---------------------------- */
+/* 
+const firebaseConfig = {
+  apiKey: "PASTE_HERE",
+  authDomain: "PASTE_HERE.firebaseapp.com",
+  projectId: "PASTE_HERE",
+  storageBucket: "PASTE_HERE.appspot.com",
+  messagingSenderId: "PASTE_HERE",
+  appId: "PASTE_HERE"
+}; 
+*/
 
-  // Format numbers like currency (without requiring a currency code)
-  function formatAmount(num) {
-    // Ensure number, keep 2 decimal places
-    const n = Number(num || 0);
-    return `${CURRENCY_SYMBOL} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const firebaseConfig = {
+  apiKey: "AIzaSyBbOaDJpvjl4InkWET2K7f0aBxGzCFjAcU",
+  authDomain: "finance-tracker-1-1f2fe.firebaseapp.com",
+  projectId: "finance-tracker-1-1f2fe",
+  storageBucket: "finance-tracker-1-1f2fe.firebasestorage.app",
+  messagingSenderId: "912329757803",
+  appId: "1:912329757803:web:4e51359ce73499819f0d2e",
+  measurementId: "G-ZX9J5BXGZC"
+};
+
+
+// Init Firebase
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+
+// Offline support: cache Firestore in IndexedDB so it works without internet
+enableIndexedDbPersistence(db).catch(() => {
+  // Fallback if multiple tabs or unsupported: it's fine, app still works online
+});
+
+/* ---------------------------
+   App state
+---------------------------- */
+// If you prefer South African Rand, set 'R' or use Intl.NumberFormat:
+const CURRENCY_SYMBOL = 'R';
+let transactions = [];   // {id, date, type, category, description, amount, userId, createdAt}
+let unsubscribe = null;  // Firestore listener
+let editingId = null;    // currently edited transaction id
+
+/* ---------------------------
+   DOM helpers
+---------------------------- */
+const $ = (sel) => document.querySelector(sel);
+const appMain = $('#app');
+const appFooter = $('#appFooter');
+const authBox = $('#authBox');
+const authStatus = $('#authStatus');
+const userEmailEl = $('#userEmail');
+
+const emailInput = $('#email');
+const passwordInput = $('#password');
+const loginBtn = $('#loginBtn');
+const registerBtn = $('#registerBtn');
+const logoutBtn = $('#logoutBtn');
+
+// Existing elements from your UI
+const totalIncomeEl = $('#totalIncome');
+const totalExpenseEl = $('#totalExpense');
+const totalBalanceEl = $('#totalBalance');
+
+const form = $('#transactionForm');
+const formTitle = $('#formTitle');
+const cancelEditBtn = $('#cancelEdit');
+
+const dateInput = $('#date');
+const typeInput = $('#type');
+const categoryInput = $('#category');
+const amountInput = $('#amount');
+const descInput = $('#description');
+
+const filterMonthInput = $('#filterMonth');
+const filterTypeInput = $('#filterType');
+const searchTextInput = $('#searchText');
+
+const tbody = $('#transactionBody');
+
+const exportJsonBtn = $('#exportJson');
+const exportCsvBtn = $('#exportCsv');
+const importJsonInput = $('#importJson');
+
+/* ---------------------------
+   Utility functions
+---------------------------- */
+function formatAmount(num) {
+  const n = Number(num || 0);
+  return `${CURRENCY_SYMBOL} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+function uidLike() {
+  return 't_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+}
+
+/* ---------------------------
+   Auth handlers
+---------------------------- */
+loginBtn?.addEventListener('click', async () => {
+  const email = emailInput.value.trim();
+  const pass = passwordInput.value;
+  if (!email || !pass) return setAuthStatus('Enter email and password.');
+  try {
+    await signInWithEmailAndPassword(auth, email, pass);
+    setAuthStatus('');
+  } catch (e) {
+    setAuthStatus('Sign-in failed: ' + e.message);
   }
+});
 
-  // Generate simple unique IDs (sufficient for local use)
-  function uid() {
-    return 't_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+registerBtn?.addEventListener('click', async () => {
+  const email = emailInput.value.trim();
+  const pass = passwordInput.value;
+  if (!email || !pass) return setAuthStatus('Enter email and password.');
+  try {
+    await createUserWithEmailAndPassword(auth, email, pass);
+    setAuthStatus('Account created. You are now signed in.');
+  } catch (e) {
+    setAuthStatus('Create failed: ' + e.message);
   }
+});
 
-  // -------------------------------
-  // State (in-memory)
-  // -------------------------------
-  let transactions = [];  // array of {id, date:'YYYY-MM-DD', type:'income'|'expense', category, description, amount:number}
-  let editingId = null;   // track which transaction is being edited (null means add mode)
+logoutBtn?.addEventListener('click', () => signOut(auth));
 
-  // -------------------------------
-  // Load & Save from localStorage
-  // -------------------------------
-  function loadTransactions() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          transactions = parsed.map(t => ({
-            id: t.id || uid(),
-            date: t.date || new Date().toISOString().slice(0,10),
-            type: t.type === 'income' ? 'income' : 'expense',
-            category: t.category || 'General',
-            description: t.description || '',
-            amount: Number(t.amount) || 0
-          }));
-        }
-      }
-    } catch (e) {
-      console.error('Failed to load from localStorage', e);
-    }
-  }
+function setAuthStatus(msg) {
+  if (authStatus) authStatus.textContent = msg;
+}
 
-  function saveTransactions() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(transactions));
-  }
+/* ---------------------------
+   Firestore listeners
+---------------------------- */
+function startRealtime(user) {
+  // Stop previous listener
+  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
 
-  // -------------------------------
-  // DOM elements
-  // -------------------------------
-  const totalIncomeEl = $('#totalIncome');
-  const totalExpenseEl = $('#totalExpense');
-  const totalBalanceEl = $('#totalBalance');
+  // Listen to current user's transactions, newest first
+  const q = query(
+    collection(db, 'transactions'),
+    where('userId', '==', user.uid),
+    orderBy('date', 'desc'),
+    orderBy('createdAt', 'desc')
+  );
 
-  const form = $('#transactionForm');
-  const formTitle = $('#formTitle');
-  const cancelEditBtn = $('#cancelEdit');
-
-  const dateInput = $('#date');
-  const typeInput = $('#type');
-  const categoryInput = $('#category');
-  const amountInput = $('#amount');
-  const descInput = $('#description');
-
-  const filterMonthInput = $('#filterMonth');
-  const filterTypeInput = $('#filterType');
-  const searchTextInput = $('#searchText');
-
-  const tbody = $('#transactionBody');
-
-  const exportJsonBtn = $('#exportJson');
-  const exportCsvBtn = $('#exportCsv');
-  const importJsonInput = $('#importJson');
-
-  // -------------------------------
-  // Initial setup
-  // -------------------------------
-  function init() {
-    // Default date = today
-    dateInput.value = new Date().toISOString().slice(0, 10);
-
-    // Default filters
-    const ym = new Date().toISOString().slice(0, 7); // YYYY-MM
-    filterMonthInput.value = ym;
-    filterTypeInput.value = 'all';
-
-    loadTransactions();
+  unsubscribe = onSnapshot(q, (snap) => {
+    transactions = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        date: data.date || new Date().toISOString().slice(0,10),
+        type: data.type === 'income' ? 'income' : 'expense',
+        category: data.category || 'General',
+        description: data.description || '',
+        amount: Number(data.amount) || 0,
+        userId: data.userId
+      };
+    });
     render();
-    attachEvents();
+  }, (err) => {
+    console.error('Realtime error', err);
+    setAuthStatus('Could not load data: ' + err.message);
+  });
+}
+
+function stopRealtime() {
+  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+}
+
+/* ---------------------------
+   UI show/hide on auth state
+---------------------------- */
+onAuthStateChanged(auth, (user) => {
+  if (user) {
+    // Show app
+    authBox?.classList.add('hidden');
+    appMain?.classList.remove('hidden');
+    appFooter?.classList.remove('hidden');
+    if (userEmailEl) userEmailEl.textContent = user.email || '(no email)';
+    // Defaults
+    dateInput.value = new Date().toISOString().slice(0, 10);
+    filterMonthInput.value = new Date().toISOString().slice(0, 7);
+    filterTypeInput.value = 'all';
+    // Start listening to data
+    startRealtime(user);
+  } else {
+    // Hide app
+    stopRealtime();
+    appMain?.classList.add('hidden');
+    appFooter?.classList.add('hidden');
+    authBox?.classList.remove('hidden');
+    transactions = [];
+    render();
+  }
+});
+
+/* ---------------------------
+   Form & actions (same as before, but using Firestore)
+---------------------------- */
+form?.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const user = auth.currentUser;
+  if (!user) return setAuthStatus('Please sign in.');
+
+  const t = {
+    date: dateInput.value,
+    type: typeInput.value === 'income' ? 'income' : 'expense',
+    category: (categoryInput.value || '').trim(),
+    description: (descInput.value || '').trim(),
+    amount: Number(amountInput.value),
+    userId: user.uid,
+    createdAt: serverTimestamp()
+  };
+
+  if (!t.date || !t.category || !(t.amount > 0)) {
+    alert('Please fill all required fields with valid values.');
+    return;
   }
 
-  // -------------------------------
-  // Event listeners
-  // -------------------------------
-  function attachEvents() {
-    form.addEventListener('submit', onFormSubmit);
-    cancelEditBtn.addEventListener('click', resetForm);
-
-    filterMonthInput.addEventListener('input', render);
-    filterTypeInput.addEventListener('change', render);
-    searchTextInput.addEventListener('input', render);
-
-    exportJsonBtn.addEventListener('click', exportJson);
-    exportCsvBtn.addEventListener('click', exportCsv);
-    importJsonInput.addEventListener('change', importJson);
-  }
-
-  // -------------------------------
-  // Form handlers (Add / Edit)
-  // -------------------------------
-  function onFormSubmit(e) {
-    e.preventDefault();
-
-    // Gather values
-    const t = {
-      date: dateInput.value,
-      type: typeInput.value,
-      category: (categoryInput.value || '').trim(),
-      description: (descInput.value || '').trim(),
-      amount: Number(amountInput.value)
-    };
-
-    // Basic validation
-    if (!t.date || !t.type || !t.category || !(t.amount > 0)) {
-      alert('Please fill all required fields with valid values.');
-      return;
-    }
-
+  try {
     if (editingId) {
-      // Update existing
-      const idx = transactions.findIndex(x => x.id === editingId);
-      if (idx >= 0) {
-        transactions[idx] = { ...transactions[idx], ...t };
-        saveTransactions();
-        resetForm();
-        render();
-      }
+      await updateDoc(doc(db, 'transactions', editingId), {
+        date: t.date, type: t.type, category: t.category,
+        description: t.description, amount: t.amount
+      });
+      resetForm();
     } else {
-      // Add new
-      const newItem = { id: uid(), ...t };
-      transactions.unshift(newItem); // newest first
-      saveTransactions();
+      await addDoc(collection(db, 'transactions'), t);
       form.reset();
       dateInput.value = new Date().toISOString().slice(0, 10);
-      render();
     }
+  } catch (e) {
+    alert('Save failed: ' + e.message);
+  }
+});
+
+cancelEditBtn?.addEventListener('click', resetForm);
+
+function resetForm() {
+  editingId = null;
+  formTitle.textContent = 'Add Transaction';
+  cancelEditBtn.classList.add('hidden');
+  form.reset();
+  dateInput.value = new Date().toISOString().slice(0, 10);
+  typeInput.value = 'income';
+}
+
+function startEdit(id) {
+  const t = transactions.find(x => x.id === id);
+  if (!t) return;
+  editingId = id;
+  formTitle.textContent = 'Edit Transaction';
+  cancelEditBtn.classList.remove('hidden');
+
+  dateInput.value = t.date;
+  typeInput.value = t.type;
+  categoryInput.value = t.category;
+  amountInput.value = String(t.amount);
+  descInput.value = t.description || '';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/* ---------------------------
+   Rendering & filters
+---------------------------- */
+function applyFilters(list) {
+  const month = filterMonthInput.value; // "YYYY-MM"
+  const type = filterTypeInput.value;   // 'all'|'income'|'expense'
+  const qtxt = (searchTextInput.value || '').trim().toLowerCase();
+  return list.filter(t => {
+    const matchesMonth = month ? t.date.startsWith(month) : true;
+    const matchesType = type === 'all' ? true : t.type === type;
+    const matchesText = qtxt
+      ? (t.category.toLowerCase().includes(qtxt) || (t.description || '').toLowerCase().includes(qtxt))
+      : true;
+    return matchesMonth && matchesType && matchesText;
+  });
+}
+
+function computeTotals(list) {
+  let income = 0, expense = 0;
+  for (const t of list) {
+    if (t.type === 'income') income += t.amount; else expense += t.amount;
+  }
+  return { income, expense, balance: income - expense };
+}
+
+function render() {
+  const filtered = applyFilters(transactions);
+
+  const { income, expense, balance } = computeTotals(filtered);
+  if (totalIncomeEl) totalIncomeEl.textContent = formatAmount(income);
+  if (totalExpenseEl) totalExpenseEl.textContent = formatAmount(expense);
+  if (totalBalanceEl) totalBalanceEl.textContent = formatAmount(balance);
+
+  if (!tbody) return;
+  tbody.innerHTML = '';
+
+  if (filtered.length === 0) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 6;
+    td.textContent = 'No transactions found for current filters.';
+    td.style.color = '#666';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+    return;
   }
 
-  function resetForm() {
-    editingId = null;
-    formTitle.textContent = 'Add Transaction';
-    cancelEditBtn.classList.add('hidden');
-    form.reset();
-    dateInput.value = new Date().toISOString().slice(0, 10);
-    typeInput.value = 'income';
-  }
+  for (const t of filtered) {
+    const tr = document.createElement('tr');
 
-  function startEdit(id) {
-    const t = transactions.find(x => x.id === id);
-    if (!t) return;
-    editingId = id;
-    formTitle.textContent = 'Edit Transaction';
-    cancelEditBtn.classList.remove('hidden');
+    const tdDate = document.createElement('td');
+    tdDate.textContent = t.date;
 
-    dateInput.value = t.date;
-    typeInput.value = t.type;
-    categoryInput.value = t.category;
-    amountInput.value = String(t.amount);
-    descInput.value = t.description || '';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
+    const tdType = document.createElement('td');
+    const badge = document.createElement('span');
+    badge.className = `badge ${t.type}`;
+    badge.textContent = t.type === 'income' ? 'Income' : 'Expense';
+    tdType.appendChild(badge);
 
-  // -------------------------------
-  // Rendering
-  // -------------------------------
-  function applyFilters(list) {
-    const month = filterMonthInput.value; // "YYYY-MM"
-    const type = filterTypeInput.value;   // 'all' | 'income' | 'expense'
-    const q = (searchTextInput.value || '').trim().toLowerCase();
+    const tdCat = document.createElement('td');
+    tdCat.textContent = t.category;
 
-    return list.filter(t => {
-      const matchesMonth = month ? t.date.startsWith(month) : true;
-      const matchesType = type === 'all' ? true : t.type === type;
-      const matchesText = q
-        ? (t.category.toLowerCase().includes(q) || (t.description || '').toLowerCase().includes(q))
-        : true;
-      return matchesMonth && matchesType && matchesText;
-    });
-  }
+    const tdDesc = document.createElement('td');
+    tdDesc.textContent = t.description || '';
 
-  function computeTotals(list) {
-    let income = 0, expense = 0;
-    for (const t of list) {
-      if (t.type === 'income') income += t.amount;
-      else expense += t.amount;
-    }
-    const balance = income - expense;
-    return { income, expense, balance };
-  }
+    const tdAmount = document.createElement('td');
+    tdAmount.className = 'amountCol';
+    tdAmount.textContent = formatAmount(t.amount);
 
-  function render() {
-    const filtered = applyFilters(transactions);
+    const tdActions = document.createElement('td');
+    const editBtn = document.createElement('button');
+    editBtn.className = 'small secondary';
+    editBtn.textContent = 'Edit';
+    editBtn.addEventListener('click', () => startEdit(t.id));
 
-    // Totals
-    const { income, expense, balance } = computeTotals(filtered);
-    totalIncomeEl.textContent = formatAmount(income);
-    totalExpenseEl.textContent = formatAmount(expense);
-    totalBalanceEl.textContent = formatAmount(balance);
-
-    // Table rows
-    tbody.innerHTML = '';
-    if (filtered.length === 0) {
-      const tr = document.createElement('tr');
-      const td = document.createElement('td');
-      td.colSpan = 6;
-      td.textContent = 'No transactions found for current filters.';
-      td.style.color = '#666';
-      tr.appendChild(td);
-      tbody.appendChild(tr);
-      return;
-    }
-
-    for (const t of filtered) {
-      const tr = document.createElement('tr');
-
-      const tdDate = document.createElement('td');
-      tdDate.textContent = t.date;
-
-      const tdType = document.createElement('td');
-      const badge = document.createElement('span');
-      badge.className = `badge ${t.type}`;
-      badge.textContent = t.type === 'income' ? 'Income' : 'Expense';
-      tdType.appendChild(badge);
-
-      const tdCat = document.createElement('td');
-      tdCat.textContent = t.category;
-
-      const tdDesc = document.createElement('td');
-      tdDesc.textContent = t.description || '';
-
-      const tdAmount = document.createElement('td');
-      tdAmount.className = 'amountCol';
-      tdAmount.textContent = formatAmount(t.amount);
-
-      const tdActions = document.createElement('td');
-      const editBtn = document.createElement('button');
-      editBtn.className = 'small secondary';
-      editBtn.textContent = 'Edit';
-      editBtn.addEventListener('click', () => startEdit(t.id));
-
-      const delBtn = document.createElement('button');
-      delBtn.className = 'small secondary';
-      delBtn.textContent = 'Delete';
-      delBtn.addEventListener('click', () => {
-        if (confirm('Delete this transaction?')) {
-          transactions = transactions.filter(x => x.id !== t.id);
-          saveTransactions();
-          render();
-        }
-      });
-
-      tdActions.appendChild(editBtn);
-      tdActions.appendChild(delBtn);
-
-      tr.appendChild(tdDate);
-      tr.appendChild(tdType);
-      tr.appendChild(tdCat);
-      tr.appendChild(tdDesc);
-      tr.appendChild(tdAmount);
-      tr.appendChild(tdActions);
-
-      tbody.appendChild(tr);
-    }
-  }
-
-  // -------------------------------
-  // Export / Import
-  // -------------------------------
-  function downloadBlob(filename, mime, text) {
-    const blob = new Blob([text], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    URL.revokeObjectURL(url);
-  }
-
-  function exportJson() {
-    const json = JSON.stringify(transactions, null, 2);
-    downloadBlob('transactions.json', 'application/json', json);
-  }
-
-  function exportCsv() {
-    // Simple CSV (be careful with commas in text; wrap in quotes)
-    const header = ['id','date','type','category','description','amount'];
-    const rows = transactions.map(t => ([
-      t.id,
-      t.date,
-      t.type,
-      csvEscape(t.category),
-      csvEscape(t.description || ''),
-      t.amount
-    ]));
-    const csv = [header.join(','), ...rows.map(r => r.join(','))].join('\n');
-    downloadBlob('transactions.csv', 'text/csv', csv);
-
-    function csvEscape(str) {
-      const s = String(str || '');
-      // Replace double-quotes with two double-quotes and wrap in quotes
-      return `"${s.replace(/"/g, '""')}"`;
-    }
-  }
-
-  function importJson(ev) {
-    const file = ev.target.files && ev.target.files[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const data = JSON.parse(reader.result);
-        if (!Array.isArray(data)) throw new Error('Invalid file: expected an array');
-        // Basic validation
-        transactions = data.map(t => ({
-          id: t.id || uid(),
-          date: t.date || new Date().toISOString().slice(0,10),
-          type: t.type === 'income' ? 'income' : 'expense',
-          category: t.category || 'General',
-          description: t.description || '',
-          amount: Number(t.amount) || 0
-        }));
-        saveTransactions();
-        render();
-        alert('Import completed.');
-      } catch (err) {
-        console.error(err);
-        alert('Import failed. Ensure the JSON structure matches the exported format.');
-      } finally {
-        importJsonInput.value = ''; // reset input
+    const delBtn = document.createElement('button');
+    delBtn.className = 'small secondary';
+    delBtn.textContent = 'Delete';
+    delBtn.addEventListener('click', async () => {
+      if (confirm('Delete this transaction?')) {
+        try { await deleteDoc(doc(db, 'transactions', t.id)); }
+        catch (e) { alert('Delete failed: ' + e.message); }
       }
-    };
-    reader.readAsText(file);
-  }
+    });
 
-  // -------------------------------
-  // Start
-  // -------------------------------
-  init();
-})();
+    tdActions.appendChild(editBtn);
+    tdActions.appendChild(delBtn);
+
+    tr.appendChild(tdDate);
+    tr.appendChild(tdType);
+    tr.appendChild(tdCat);
+    tr.appendChild(tdDesc);
+    tr.appendChild(tdAmount);
+    tr.appendChild(tdActions);
+
+    tbody.appendChild(tr);
+  }
+}
+
+/* ---------------------------
+   Filters & Export/Import events
+---------------------------- */
+filterMonthInput?.addEventListener('input', render);
+filterTypeInput?.addEventListener('change', render);
+searchTextInput?.addEventListener('input', render);
+
+// Export JSON uses the in-memory list (already loaded from Firestore)
+exportJsonBtn?.addEventListener('click', () => {
+  downloadBlob('transactions.json', 'application/json', JSON.stringify(transactions, null, 2));
+});
+
+exportCsvBtn?.addEventListener('click', () => {
+  const header = ['id','date','type','category','description','amount'];
+  const rows = transactions.map(t => ([
+    t.id, t.date, t.type, csvEscape(t.category), csvEscape(t.description || ''), t.amount
+  ]));
+  const csv = [header.join(','), ...rows.map(r => r.join(','))].join('\n');
+  downloadBlob('transactions.csv', 'text/csv', csv);
+
+  function csvEscape(str) {
+    const s = String(str || '');
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+});
+
+// Import JSON: create docs for current user
+importJsonInput?.addEventListener('change', async (ev) => {
+  const file = ev.target.files?.[0];
+  if (!file) return;
+  const user = auth.currentUser;
+  if (!user) return setAuthStatus('Please sign in.');
+
+  const text = await file.text();
+  try {
+    const data = JSON.parse(text);
+    if (!Array.isArray(data)) throw new Error('Invalid JSON (expected an array).');
+    for (const t of data) {
+      const docData = {
+        date: t.date || new Date().toISOString().slice(0,10),
+        type: t.type === 'income' ? 'income' : 'expense',
+        category: t.category || 'General',
+        description: t.description || '',
+        amount: Number(t.amount) || 0,
+        userId: user.uid,
+        createdAt: serverTimestamp()
+      };
+      await addDoc(collection(db, 'transactions'), docData);
+    }
+    alert('Import completed.');
+  } catch (e) {
+    alert('Import failed: ' + e.message);
+  } finally {
+    importJsonInput.value = '';
+  }
+});
+
+/* ---------------------------
+   Small helpers
+---------------------------- */
+function downloadBlob(filename, mime, text) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+}
