@@ -1,0 +1,161 @@
+
+/* Basic, readable styling for beginners */
+:root {
+  --bg: #f7f8fa;
+  --card: #ffffff;
+  --text: #222;
+  --muted: #666;
+  --border: #e2e6ea;
+  --primary: #2563eb;   /* blue */
+  --primary-contrast: #ffffff;
+  --income: #0f766e;    /* teal */
+  --expense: #b91c1c;   /* red */
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+  line-height: 1.5;
+}
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+h1, h2 {
+  margin: 0 0 12px;
+}
+
+header .summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.summary .label { color: var(--muted); }
+.summary .value { font-weight: 700; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin: 16px 0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field.full { grid-column: 1 / -1; }
+
+label { font-size: 0.9rem; color: var(--muted); }
+input, select {
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-size: 1rem;
+  background: #fff;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+button {
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+}
+
+button.primary {
+  background: var(--primary);
+  color: var(--primary-contrast);
+  border: none;
+}
+
+button.secondary {
+  background: #f0f3f7;
+}
+
+button.small {
+  padding: 6px 10px;
+  font-size: 0.9rem;
+}
+
+button.income { background: var(--income); color: #fff; border: none; }
+button.expense { background: var(--expense); color: #fff; border: none; }
+
+.hidden { display: none; }
+
+.tableWrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  text-align: left;
+  padding: 10px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+th.amountCol, td.amountCol {
+  text-align: right;
+}
+
+td .badge {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  color: #fff;
+}
+
+.badge.income { background: var(--income); }
+.badge.expense { background: var(--expense); }
+
+.fileLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+}
+.fileLabel input[type="file"] { display: none; }
+
+.note {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 640px) {
+  header .summary { grid-template-columns: 1fr; }
+  .grid { grid-template-columns: 1fr; }
+}

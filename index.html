@@ -1,0 +1,135 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Income & Expense Tracker</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="container">
+    <h1>Income & Expense Tracker</h1>
+    <div class="summary" aria-live="polite">
+      <div>
+        <span class="label">Income:</span>
+        <span id="totalIncome" class="value">—</span>
+      </div>
+      <div>
+        <span class="label">Expense:</span>
+        <span id="totalExpense" class="value">—</span>
+      </div>
+      <div>
+        <span class="label">Balance:</span>
+        <span id="totalBalance" class="value">—</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="container">
+    <!-- Add / Edit Transaction -->
+    <section class="card">
+      <h2 id="formTitle">Add Transaction</h2>
+      <form id="transactionForm" autocomplete="on">
+        <div class="grid">
+          <div class="field">
+            <label for="date">Date</label>
+            <input type="date" id="date" name="date" required />
+          </div>
+          <div class="field">
+            <label for="type">Type</label>
+            <select id="type" name="type" required>
+              <option value="income">Income</option>
+              <option value="expense">Expense</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="category">Category</label>
+            <input type="text" id="category" name="category" placeholder="e.g., Salary, Rent" required />
+          </div>
+          <div class="field">
+            <label for="amount">Amount</label>
+            <input type="number" id="amount" name="amount" step="0.01" min="0.01" required />
+          </div>
+          <div class="field full">
+            <label for="description">Description (optional)</label>
+            <input type="text" id="description" name="description" placeholder="e.g., January paycheck" />
+          </div>
+        </div>
+
+        <div class="actions">
+          <button type="submit" class="primary">Save</button>
+          <button type="button" id="cancelEdit" class="secondary hidden">Cancel Edit</button>
+        </div>
+      </form>
+    </section>
+
+    <!-- Filters -->
+    <section class="card">
+      <h2>Filters</h2>
+      <div class="grid">
+        <div class="field">
+          <label for="filterMonth">Month</label>
+          <input type="month" id="filterMonth" />
+        </div>
+        <div class="field">
+          <label for="filterType">Type</label>
+          <select id="filterType">
+            <option value="all">All</option>
+            <option value="income">Income</option>
+            <option value="expense">Expense</option>
+          </select>
+        </div>
+        <div class="field full">
+          <label for="searchText">Search (category/description)</label>
+          <input type="text" id="searchText" placeholder="Type to search..." />
+        </div>
+      </div>
+    </section>
+
+    <!-- Transaction List -->
+    <section class="card">
+      <h2>Transactions</h2>
+      <div class="tableWrap">
+        <table id="transactionTable">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Category</th>
+              <th>Description</th>
+              <th class="amountCol">Amount</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="transactionBody">
+            <!-- Rows injected by JS -->
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Backup & Export -->
+    <section class="card">
+      <h2>Backup & Export</h2>
+      <div class="actions">
+        <button id="exportJson" class="secondary">Export JSON</button>
+        <button id="exportCsv" class="secondary">Export CSV</button>
+        <label class="fileLabel">
+          Import JSON
+          <input type="file" id="importJson" accept="application/json" />
+        </label>
+      </div>
+      <p class="note">
+        Your data is stored locally in your browser (localStorage). Export regularly to back up.
+      </p>
+    </section>
+  </main>
+
+  <footer class="container">
+    <p>Made with ❤️ in HTML, CSS & JS – no frameworks.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
