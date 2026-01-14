@@ -108,6 +108,99 @@ const addCategoryBtn = document.querySelector('#addCategoryBtn');
 const categoryListDiv = document.querySelector('#categoryList');
 const newCategoryKindSelect = document.querySelector('#newCategoryKind');
 
+
+// --- Collapsible UI state (per-user) ---
+const UI_STATE_STORAGE_KEY_PREFIX = 'finance.ui.v1.'; // + uid or 'anon'
+let uiState = { /* key -> boolean (true = collapsed) */ };
+let uiStateKey = UI_STATE_STORAGE_KEY_PREFIX + 'anon';
+
+function loadUiState() {
+  try {
+    const raw = localStorage.getItem(uiStateKey);
+    uiState = raw ? JSON.parse(raw) : {};
+  } catch { uiState = {}; }
+}
+
+function saveUiState() {
+  try {
+    localStorage.setItem(uiStateKey, JSON.stringify(uiState));
+  } catch {}
+}
+
+function setCollapsed(key, collapsed) {
+  uiState[key] = !!collapsed;
+  saveUiState();
+}
+
+function getCollapsed(key, fallback = false) {
+  return Object.prototype.hasOwnProperty.call(uiState, key) ? !!uiState[key] : fallback;
+}
+
+
+
+// Collapsible DOM hooks
+const collapsibleSections = [
+  { id: 'filtersCard',      key: 'filters',      btnSel: '.collapseBtn' },
+  { id: 'transactionsCard', key: 'transactions', btnSel: '.collapseBtn' },
+  { id: 'categoriesCard',   key: 'categories',   btnSel: '.collapseBtn' },
+  { id: 'backupCard',       key: 'backup',       btnSel: '.collapseBtn' }
+];
+
+const collapseAllBtn = document.querySelector('#collapseAll');
+const expandAllBtn   = document.querySelector('#expandAll');
+
+// Initialize one section
+function initCollapsible(sectionId, key) {
+  const el = document.getElementById(sectionId);
+  if (!el) return;
+  const btn = el.querySelector('.collapseBtn');
+  if (!btn) return;
+
+  // Apply saved state
+  const shouldCollapse = getCollapsed(key, false);
+  el.classList.toggle('collapsed', shouldCollapse);
+  btn.setAttribute('aria-expanded', shouldCollapse ? 'false' : 'true');
+
+  // Toggle on click/keyboard
+  const toggle = () => {
+    const nowCollapsed = !el.classList.contains('collapsed');
+    el.classList.toggle('collapsed', nowCollapsed);
+    btn.setAttribute('aria-expanded', nowCollapsed ? 'false' : 'true');
+    setCollapsed(key, nowCollapsed);
+  };
+  btn.addEventListener('click', toggle);
+  btn.addEventListener('keydown', (ev) => {
+    if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); }
+  });
+}
+
+// Initialize all sections
+function initAllCollapsibles() {
+  collapsibleSections.forEach(s => initCollapsible(s.id, s.key));
+
+  collapseAllBtn?.addEventListener('click', () => {
+    collapsibleSections.forEach(({ id, key }) => {
+      const el = document.getElementById(id);
+      const btn = el?.querySelector('.collapseBtn');
+      if (!el || !btn) return;
+      el.classList.add('collapsed');
+      btn.setAttribute('aria-expanded', 'false');
+      setCollapsed(key, true);
+    });
+  });
+
+  expandAllBtn?.addEventListener('click', () => {
+    collapsibleSections.forEach(({ id, key }) => {
+      const el = document.getElementById(id);
+      const btn = el?.querySelector('.collapseBtn');
+      if (!el || !btn) return;
+      el.classList.remove('collapsed');
+      btn.setAttribute('aria-expanded', 'true');
+      setCollapsed(key, false);
+    });
+  });
+}
+
 /* ---------------------------
    Utility functions
 ---------------------------- */
@@ -283,6 +376,12 @@ onAuthStateChanged(auth, (user) => {
     // Start listening to data
     startRealtime(user);
     startRealtimeCategories(user);
+
+    // Load per-user UI state
+    uiStateKey = UI_STATE_STORAGE_KEY_PREFIX + (user.uid || 'anon');
+    loadUiState();
+    initAllCollapsibles();
+
   } else {
     // Hide app
     stopRealtime();
@@ -296,7 +395,12 @@ onAuthStateChanged(auth, (user) => {
     emailInput.value = "";
     passwordInput.value = "";
     if (authStatus) authStatus.textContent = "";
+
     
+    uiStateKey = UI_STATE_STORAGE_KEY_PREFIX + 'anon';
+    loadUiState();
+    // Optionally reset UI for the login screen; not strictly necessary
+
     transactions = [];
     render();
   }
