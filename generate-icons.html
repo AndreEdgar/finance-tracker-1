@@ -1,0 +1,124 @@
+
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Generate PWA Icons – Turquoise $</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root{
+    --bg:#0fb9b1; /* turquoise */
+    --fg:#ffffff; /* white symbol */
+  }
+  body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif;padding:20px;line-height:1.5}
+  .wrap{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+  .card{border:1px solid #e5e7eb;border-radius:12px;padding:16px;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+  canvas{display:block;border:1px dashed #e5e7eb;border-radius:12px;background:#fff}
+  button{padding:8px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#f8fafc;cursor:pointer}
+  label{display:block;margin-top:8px;color:#475569;font-size:.9rem}
+  input[type="color"],input[type="text"]{padding:6px 8px;border:1px solid #cbd5e1;border-radius:8px;font-size:0.95rem}
+  .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+  small{color:#64748b}
+</style>
+</head>
+<body>
+  <h1>Generate PWA Icons</h1>
+  <p>Turquoise background with “$” symbol. Adjust if you like and download PNGs.</p>
+
+  <div class="card">
+    <div class="row">
+      <label>Background color (turquoise):
+        <input id="bg" type="color" value="#0fb9b1" />
+      </label>
+      <label>Symbol color:
+        <input id="fg" type="color" value="#ffffff" />
+      </label>
+      <label>Symbol:
+        <input id="sym" type="text" value="$" maxlength="2" />
+      </label>
+      <label>Rounded corners:
+        <input id="rounded" type="checkbox" checked />
+      </label>
+    </div>
+    <div class="row">
+      <button id="dl192">Download 192×192</button>
+      <button id="dl512">Download 512×512</button>
+      <small>Files will download as <code>icon-192.png</code> and <code>icon-512.png</code></small>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="card">
+      <h3>Preview 192×192</h3>
+      <canvas id="c192" width="192" height="192"></canvas>
+    </div>
+    <div class="card">
+      <h3>Preview 512×512</h3>
+      <canvas id="c512" width="512" height="512"></canvas>
+    </div>
+  </div>
+
+<script>
+(function(){
+  const c192 = document.getElementById('c192');
+  const c512 = document.getElementById('c512');
+  const ctx192 = c192.getContext('2d');
+  const ctx512 = c512.getContext('2d');
+  const bg = document.getElementById('bg');
+  const fg = document.getElementById('fg');
+  const sym = document.getElementById('sym');
+  const rounded = document.getElementById('rounded');
+
+  function drawOne(ctx, size){
+    const pad = size * 0.08;               // padding for rounded rect
+    const radius = rounded.checked ? size * 0.2 : 0;
+
+    // Background
+    ctx.clearRect(0,0,size,size);
+    ctx.fillStyle = bg.value || '#0fb9b1';
+    if (radius > 0){
+      const r = radius;
+      ctx.beginPath();
+      ctx.moveTo(pad+r, pad);
+      ctx.arcTo(size-pad, pad, size-pad, size-pad, r);
+      ctx.arcTo(size-pad, size-pad, pad, size-pad, r);
+      ctx.arcTo(pad, size-pad, pad, pad, r);
+      ctx.arcTo(pad, pad, size-pad, pad, r);
+      ctx.closePath();
+      ctx.fill();
+    } else {
+      ctx.fillRect(0,0,size,size);
+    }
+
+    // Symbol
+    ctx.fillStyle = fg.value || '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // font size scales with canvas; tweak weight for sharpness
+    const fontSize = size * 0.6;
+    ctx.font = `700 ${fontSize}px system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif`;
+    ctx.fillText((sym.value || '$').slice(0,2), size/2, size/2);
+  }
+
+  function drawPreviews(){
+    drawOne(ctx192, 192);
+    drawOne(ctx512, 512);
+  }
+
+  function download(canvas, filename){
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  }
+
+  // init
+  [bg, fg, sym, rounded].forEach(el => el.addEventListener('input', drawPreviews));
+  drawPreviews();
+
+  document.getElementById('dl192').addEventListener('click', () => download(c192, 'icon-192.png'));
+  document.getElementById('dl512').addEventListener('click', () => download(c512, 'icon-512.png'));
+})();
+</script>
+</body>
+</html>

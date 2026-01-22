@@ -199,6 +199,27 @@ td .badge {
   font-size: 0.9rem;
 }
 
+
+/* Update banner (appears when a new SW is ready) */
+.update-banner {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #111827;
+  color: #fff;
+  border-radius: 12px;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.18);
+  z-index: 9999;
+}
+.update-banner.hidden { display: none; }
+.update-banner .primary.small { background: #2563eb; border: none; }
+
 /* Responsive adjustments */
 @media (max-width: 640px) {
   header .summary { grid-template-columns: 1fr; }

@@ -1,12 +1,29 @@
 
 <!doctype html>
 <html lang="en">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+
   <title>Income & Expense Tracker</title>
+
+  <!-- CSS -->
   <link rel="stylesheet" href="style.css" />
+
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="manifest.webmanifest" />
+
+  <!-- Theme color for Chrome/Android -->
+  <meta name="theme-color" content="#2563eb" />
+
+  <!-- iOS PWA support -->
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Finance" />
 </head>
+
 <body>
   <header class="container">
     <h1>Income & Expense Tracker</h1>
@@ -47,6 +64,7 @@
   </section>
 
   <main id="app" class="container hidden">
+    
     <!-- Add / Edit Transaction -->
     <section class="card">
       <h2 id="formTitle">Add Transaction</h2>
@@ -63,11 +81,6 @@
               <option value="expense">Expense</option>
             </select>
           </div>
-          <!--<div class="field">
-            <label for="category">Category</label>
-            <input type="text" id="category" name="category" placeholder="e.g., Salary, Rent" required />
-          </div>
-           -->
           
           <div class="field">
             <label for="category">Category</label>
@@ -94,30 +107,6 @@
     </section>
 
     <!-- Filters -->
-    <!-- Replaced by collapsable card
-    <section class="card">
-      <h2>Filters</h2>
-      <div class="grid">
-        <div class="field">
-          <label for="filterMonth">Month</label>
-          <input type="month" id="filterMonth" />
-        </div>
-        <div class="field">
-          <label for="filterType">Type</label>
-          <select id="filterType">
-            <option value="all">All</option>
-            <option value="income">Income</option>
-            <option value="expense">Expense</option>
-          </select>
-        </div>
-        <div class="field full">
-          <label for="searchText">Search (category/description)</label>
-          <input type="text" id="searchText" placeholder="Type to search..." />
-        </div>
-      </div>
-    </section>
-    -->
-  
     <section id="filtersCard" class="card collapsible" data-key="filters">
       <div class="card-header">
         <h2>Filters</h2>
@@ -153,116 +142,38 @@
     </section>
 
     <!-- Transaction List -->
-    <!-- Replaced by collapsable card
-    <section class="card">
-      <h2>Transactions</h2>
-      <div class="tableWrap">
-        <table id="transactionTable">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Type</th>
-              <th>Category</th>
-              <th>Description</th>
-              <th class="amountCol">Amount</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="transactionBody">
-          --><!-- Rows injected by JS --><!--
-          </tbody>
-        </table>
+    <section id="transactionsCard" class="card collapsible" data-key="transactions">
+      <div class="card-header">
+        <h2>Transactions</h2>
+        <button
+          class="collapseBtn"
+          aria-expanded="true"
+          aria-controls="transactionsBody"
+          title="Collapse/Expand Transactions"
+          type="button">
+        </button>
       </div>
-    </section>
-    -->
-    
-  <!-- Transaction List -->
-  <section id="transactionsCard" class="card collapsible" data-key="transactions">
-    <div class="card-header">
-      <h2>Transactions</h2>
-      <button
-        class="collapseBtn"
-        aria-expanded="true"
-        aria-controls="transactionsBody"
-        title="Collapse/Expand Transactions"
-        type="button">
-      </button>
-    </div>
 
-    <div id="transactionsBody" class="card-body">
-      <div class="tableWrap">
-        <table id="transactionTable">
-          <thead>
-            <tr>
-              <th>Date</th>
-              <th>Type</th>
-              <th>Category</th>
-              <th>Description</th>
-              <th class="amountCol">Amount</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody id="transactionBody"><!-- Rows injected by JS --></tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
-    <!--
-    <section class="card">
-      <h2>Manage Categories</h2>
-
-      <div class="grid">
-        <div class="field full">
-          <label for="newCategoryName">New category</label>
-          <input type="text" id="newCategoryName" placeholder="e.g., Salary, Rent, Groceries" />
+      <div id="transactionsBody" class="card-body">
+        <div class="tableWrap">
+          <table id="transactionTable">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Category</th>
+                <th>Description</th>
+                <th class="amountCol">Amount</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="transactionBody"><!-- Rows injected by JS --></tbody>
+          </table>
         </div>
       </div>
-      <div class="actions">
-        <button id="addCategoryBtn" class="primary">Add Category</button>
-      </div>
-
-      <h3 style="margin-top:16px;">Your categories</h3>
-      <div id="categoryList" class="tableWrap">
-    -->
-        <!-- List populated by JS -->
-    <!--
-      </div>
-      <p class="note">Categories are per account and sync across your devices.</p>
     </section>
-    -->
-    
-    <!--Replaced by callapsable card
-    <section class="card">
-      <h2>Manage Categories</h2>
 
-      
-      <div class="grid">
-        <div class="field">
-          <label for="newCategoryName">New category</label>
-          <input type="text" id="newCategoryName" placeholder="e.g., Salary, Rent, Groceries" />
-        </div>
-        <div class="field">
-          <label for="newCategoryKind">Kind</label>
-          <select id="newCategoryKind">
-            <option value="income">Income</option>
-            <option value="expense">Expense</option>
-            <option value="both" selected>Both</option>
-          </select>
-        </div>
-      </div>
-
-      <div class="actions">
-        <button id="addCategoryBtn" class="primary">Add Category</button>
-      </div>
-
-      <h3 style="margin-top:16px;">Your categories</h3>
-      <div id="categoryList" class="tableWrap">--><!-- populated by JS --><!--</div>
-
-      <p class="note">Categories are per account, include kind (Income/Expense/Both), and sync across your devices.</p>
-    </section>
-    -->
-    
+    <!--Manage Categories-->
     <section id="categoriesCard" class="card collapsible" data-key="categories">
       <div class="card-header">
         <h2>Manage Categories</h2>
@@ -302,25 +213,6 @@
     </section>
 
     <!-- Backup & Export -->
-     <!--Replaced by callapsable card
-    <section class="card">
-      <h2>Backup & Export</h2>
-      <div class="actions">
-        <button id="exportJson" class="secondary">Export JSON</button>
-        <button id="exportCsv" class="secondary">Export CSV</button>
-        <label class="fileLabel">
-          Import JSON
-          <input type="file" id="importJson" accept="application/json" />
-        </label>
-      </div>
-      <p class="note">
-        Your data is stored in Firestore and cached locally via IndexedDB for offline use. Export regularly to back up.
-      </p>
-    </section>
-    -->
-
-    
-    <!-- Backup & Export -->
     <section id="backupCard" class="card collapsible" data-key="backup">
       <div class="card-header">
         <h2>Backup & Export</h2>
@@ -348,18 +240,29 @@
       </div>
     </section>
 
-
   </main>
-
+  
+  <div id="updateBanner" class="update-banner hidden" role="status" aria-live="polite">
+    <span>Update available</span>
+    <button id="reloadBtn" class="primary small" type="button">Reload</button>
+  </div>
+ 
   <footer class="container hidden" id="appFooter">
     
     <p>
       Signed in as <span id="userEmail"></span>
       <button id="logoutBtn" class="secondary small">Sign out</button>
     </p>
+    
+    <!-- Add inside your existing footer content -->
+    <button id="installBtn" class="secondary small" style="display:none">Install app</button>
+
     <p>Data stored in Firestore (synced across devices) with offline caching via IndexedDB.</p>
     <p>Made with ❤️ in HTML, CSS & JS – no frameworks.</p>
   </footer>
+
+  
+
 
   <script type="module" src="app.js"></script>
 </body>
