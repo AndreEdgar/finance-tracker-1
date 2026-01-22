@@ -15,21 +15,7 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
 
-/* ---------------------------
-   TODO: Paste your Firebase config here
-   (Find it in Firebase console → Project settings → Your apps → SDK setup)
----------------------------- */
-/* 
-const firebaseConfig = {
-  apiKey: "PASTE_HERE",
-  authDomain: "PASTE_HERE.firebaseapp.com",
-  projectId: "PASTE_HERE",
-  storageBucket: "PASTE_HERE.appspot.com",
-  messagingSenderId: "PASTE_HERE",
-  appId: "PASTE_HERE"
-}; 
-*/
-
+// Your web app's Firebase configuration
 const firebaseConfig = {
   apiKey: "AIzaSyBbOaDJpvjl4InkWET2K7f0aBxGzCFjAcU",
   authDomain: "finance-tracker-1-1f2fe.firebaseapp.com",
@@ -39,7 +25,6 @@ const firebaseConfig = {
   appId: "1:912329757803:web:4e51359ce73499819f0d2e",
   measurementId: "G-ZX9J5BXGZC"
 };
-
 
 // Init Firebase
 const app = initializeApp(firebaseConfig);
@@ -108,7 +93,6 @@ const addCategoryBtn = document.querySelector('#addCategoryBtn');
 const categoryListDiv = document.querySelector('#categoryList');
 const newCategoryKindSelect = document.querySelector('#newCategoryKind');
 
-
 // --- Collapsible UI state (per-user) ---
 const UI_STATE_STORAGE_KEY_PREFIX = 'finance.ui.v1.'; // + uid or 'anon'
 let uiState = { /* key -> boolean (true = collapsed) */ };
@@ -135,8 +119,6 @@ function setCollapsed(key, collapsed) {
 function getCollapsed(key, fallback = false) {
   return Object.prototype.hasOwnProperty.call(uiState, key) ? !!uiState[key] : fallback;
 }
-
-
 
 // Collapsible DOM hooks
 const collapsibleSections = [
@@ -231,31 +213,6 @@ let categories = [];      // array of { id, name, userId, createdAt }
 let unsubscribeCats = null;
 
 // Start/stop categories realtime listener when user signs in/out
-/*function startRealtimeCategories(user) {
-  if (unsubscribeCats) { unsubscribeCats(); unsubscribeCats = null; }
-  const cq = query(
-    collection(db, 'categories'),
-    where('userId', '==', user.uid),
-    orderBy('name', 'asc') // alphabetic
-  );
-  unsubscribeCats = onSnapshot(cq, (snap) => {
-    categories = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    renderCategoryOptions();
-    renderCategoryList();
-  }, (err) => {
-    console.error('[RT] categories error', err);
-    setAuthStatus('Could not load categories: ' + err.message);
-  });
-}
-
-function stopRealtimeCategories() {
-  if (unsubscribeCats) { unsubscribeCats(); unsubscribeCats = null; }
-  categories = [];
-  renderCategoryOptions();
-  renderCategoryList();
-}
-*/
-
 function startRealtimeCategories(user) {
   if (unsubscribeCats) { unsubscribeCats(); unsubscribeCats = null; }
   const cq = query(
@@ -359,6 +316,56 @@ function stopRealtime() {
   if (unsubscribe) { unsubscribe(); unsubscribe = null; }
 }
 
+
+// --- PWA: Service worker registration ---
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    // Use relative path so it works on GitHub Pages subpath
+    navigator.serviceWorker.register('./service-worker.js').then(reg => {
+      // Optional: auto-update when a new SW is waiting
+      if (reg.waiting) {
+        // A new SW is ready; you could show a "Reload to update" UI
+        console.log('A new version is ready. Reload to update.');
+      }
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        newWorker?.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            // New content available
+            console.log('Updated content available. Reload to update.');
+          }
+        });
+      });
+    }).catch(err => console.error('SW registration failed', err));
+  });
+}
+
+// --- PWA: Install button (beforeinstallprompt) ---
+let deferredPrompt = null;
+const installBtn = document.getElementById('installBtn');
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  // Prevent the mini-infobar on mobile
+  e.preventDefault();
+  deferredPrompt = e;
+  if (installBtn) installBtn.style.display = 'inline-block';
+});
+
+installBtn?.addEventListener('click', async () => {
+  if (!deferredPrompt) return;
+  installBtn.style.display = 'none';
+  deferredPrompt.prompt();
+  const { outcome } = await deferredPrompt.userChoice;
+  console.log('PWA install prompt outcome:', outcome);
+  deferredPrompt = null;
+});
+
+// Optional: hide the button when installed
+window.addEventListener('appinstalled', () => {
+  console.log('PWA installed');
+  if (installBtn) installBtn.style.display = 'none';
+});
+
 /* ---------------------------
    UI show/hide on auth state
 ---------------------------- */
@@ -457,7 +464,7 @@ function resetForm() {
   typeInput.value = 'income';
 }
 
-/*Updated
+
 function startEdit(id) {
   const t = transactions.find(x => x.id === id);
   if (!t) return;
@@ -467,107 +474,75 @@ function startEdit(id) {
 
   dateInput.value = t.date;
   typeInput.value = t.type;
-  
-  //old:
-  //categoryInput.value = t.category;
-  
-  // Ensure the category option exists; if user deleted it, still show as selected temporarily
-  renderCategoryOptions();
+
+  // Render options based on the transaction's type
+  renderCategoryOptions(typeInput.value);
+
+  // If the category isn't in filtered options (because its kind doesn't match), add a temporary option
   if (categorySelect) {
-    // If the category no longer exists, add it as a temporary option
-    if (![...categorySelect.options].some(o => o.value === t.category)) {
-      const opt = document.createElement('option');
-      opt.value = t.category;
-      opt.textContent = t.category + ' (deleted)';
-      categorySelect.appendChild(opt);
+    const hasOpt = [...categorySelect.options].some(o => o.value === t.category);
+    if (!hasOpt && t.category) {
+      const tempOpt = document.createElement('option');
+      tempOpt.value = t.category;
+      tempOpt.textContent = `${t.category} (not available for this type)`;
+      categorySelect.appendChild(tempOpt);
     }
-    categorySelect.value = t.category;
+    categorySelect.value = t.category || '';
   }
-  
+
   amountInput.value = String(t.amount);
   descInput.value = t.description || '';
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
-  */
-  
-  function startEdit(id) {
-    const t = transactions.find(x => x.id === id);
-    if (!t) return;
-    editingId = id;
-    formTitle.textContent = 'Edit Transaction';
-    cancelEditBtn.classList.remove('hidden');
-
-    dateInput.value = t.date;
-    typeInput.value = t.type;
-
-    // Render options based on the transaction's type
-    renderCategoryOptions(typeInput.value);
-
-    // If the category isn't in filtered options (because its kind doesn't match), add a temporary option
-    if (categorySelect) {
-      const hasOpt = [...categorySelect.options].some(o => o.value === t.category);
-      if (!hasOpt && t.category) {
-        const tempOpt = document.createElement('option');
-        tempOpt.value = t.category;
-        tempOpt.textContent = `${t.category} (not available for this type)`;
-        categorySelect.appendChild(tempOpt);
-      }
-      categorySelect.value = t.category || '';
-    }
-
-    amountInput.value = String(t.amount);
-    descInput.value = t.description || '';
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
 
 
-  function getCategoriesForType(currentType) {
-    // Show categories where kind == currentType or kind == 'both'
-    return categories.filter(c => c.kind === 'both' || c.kind === currentType);
-  }
+function getCategoriesForType(currentType) {
+  // Show categories where kind == currentType or kind == 'both'
+  return categories.filter(c => c.kind === 'both' || c.kind === currentType);
+}
 
-  function renderCategoryOptions(currentType = 'income') {
-    if (!categorySelect) return;
-    const valid = getCategoriesForType(currentType);
+function renderCategoryOptions(currentType = 'income') {
+  if (!categorySelect) return;
+  const valid = getCategoriesForType(currentType);
 
-    categorySelect.innerHTML = '';
+  categorySelect.innerHTML = '';
 
-    if (valid.length === 0) {
-      const ph = document.createElement('option');
-      ph.value = '';
-      ph.textContent = 'No categories for this type. Add one below.';
-      ph.disabled = true;
-      ph.selected = true;
-      categorySelect.appendChild(ph);
-      return;
-    }
-
+  if (valid.length === 0) {
     const ph = document.createElement('option');
     ph.value = '';
-    ph.textContent = 'Select category...';
+    ph.textContent = 'No categories for this type. Add one below.';
     ph.disabled = true;
     ph.selected = true;
     categorySelect.appendChild(ph);
-
-    for (const c of valid) {
-      const opt = document.createElement('option');
-      opt.value = c.name;
-      opt.textContent = c.name;
-      categorySelect.appendChild(opt);
-    }
+    return;
   }
 
-  // When the user changes Type (Income/Expense), refresh dropdown
-  typeInput?.addEventListener('change', () => {
-    renderCategoryOptions(typeInput.value);
-    // If previously selected category is invalid for new type, clear selection
-    if (categorySelect && categorySelect.value) {
-      const stillValid = getCategoriesForType(typeInput.value)
-        .some(c => c.name === categorySelect.value);
-      if (!stillValid) categorySelect.value = '';
-    }
-  });
-``
+  const ph = document.createElement('option');
+  ph.value = '';
+  ph.textContent = 'Select category...';
+  ph.disabled = true;
+  ph.selected = true;
+  categorySelect.appendChild(ph);
+
+  for (const c of valid) {
+    const opt = document.createElement('option');
+    opt.value = c.name;
+    opt.textContent = c.name;
+    categorySelect.appendChild(opt);
+  }
+}
+
+// When the user changes Type (Income/Expense), refresh dropdown
+typeInput?.addEventListener('change', () => {
+  renderCategoryOptions(typeInput.value);
+  // If previously selected category is invalid for new type, clear selection
+  if (categorySelect && categorySelect.value) {
+    const stillValid = getCategoriesForType(typeInput.value)
+      .some(c => c.name === categorySelect.value);
+    if (!stillValid) categorySelect.value = '';
+  }
+});
+
 
 /* ---------------------------
    Rendering & filters
@@ -668,78 +643,6 @@ function render() {
   }
 }
 
-/*
-function renderCategoryOptions() {
-  if (!categorySelect) return;
-  categorySelect.innerHTML = '';
-
-  // Add a placeholder option
-  const ph = document.createElement('option');
-  ph.value = '';
-  ph.textContent = 'Select category...';
-  ph.disabled = true;
-  ph.selected = true;
-  categorySelect.appendChild(ph);
-
-  // Add each category
-  for (const c of categories) {
-    const opt = document.createElement('option');
-    opt.value = c.name;
-    opt.textContent = c.name;
-    categorySelect.appendChild(opt);
-  }
-
-  // If editing a transaction, keep its category selected
-  // (The editing function sets the select value explicitly)
-}
-*/
-/* Updated
-function renderCategoryList() {
-  if (!categoryListDiv) return;
-  if (categories.length === 0) {
-    categoryListDiv.innerHTML = '<p class="note">No categories yet. Add your first one above.</p>';
-    return;
-  }
-
-  const table = document.createElement('table');
-  table.innerHTML = `
-    <thead>
-      <tr>
-        <th>Name</th>
-        <th style="width:120px;">Actions</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  `;
-  const tbody = table.querySelector('tbody');
-
-  for (const c of categories) {
-    const tr = document.createElement('tr');
-    const tdName = document.createElement('td');
-    tdName.textContent = c.name;
-
-    const tdActions = document.createElement('td');
-    const delBtn = document.createElement('button');
-    delBtn.className = 'small secondary';
-    delBtn.textContent = 'Delete';
-    delBtn.addEventListener('click', async () => {
-      if (confirm(`Delete category "${c.name}"?`)) {
-        try { await deleteDoc(doc(db, 'categories', c.id)); }
-        catch (e) { alert('Delete failed: ' + e.message); }
-      }
-    });
-
-    tdActions.appendChild(delBtn);
-    tr.appendChild(tdName);
-    tr.appendChild(tdActions);
-    tbody.appendChild(tr);
-  }
-
-  categoryListDiv.innerHTML = '';
-  categoryListDiv.appendChild(table);
-}
-*/
-
 function renderCategoryList() {
   if (!categoryListDiv) return;
 
@@ -812,31 +715,6 @@ function renderCategoryList() {
   categoryListDiv.appendChild(table);
 }
 
-/*
-addCategoryBtn?.addEventListener('click', async () => {
-  const user = auth.currentUser;
-  if (!user) return setAuthStatus('Please sign in.');
-
-  const name = (newCategoryNameInput.value || '').trim();
-  if (!name) return alert('Please enter a category name.');
-
-  // Prevent duplicates (case-insensitive)
-  const exists = categories.some(c => c.name.toLowerCase() === name.toLowerCase());
-  if (exists) return alert('This category already exists.');
-
-  try {
-    await addDoc(collection(db, 'categories'), {
-      name,
-      userId: user.uid,
-      createdAt: serverTimestamp()
-    });
-    newCategoryNameInput.value = '';
-  } catch (e) {
-    alert('Add category failed: ' + e.message);
-  }
-});
-*/
-
 addCategoryBtn?.addEventListener('click', async () => {
   const user = auth.currentUser;
   if (!user) return setAuthStatus('Please sign in.');
@@ -862,17 +740,6 @@ addCategoryBtn?.addEventListener('click', async () => {
   }
 });
 
-/*
-const t = {
-  date: dateInput.value,
-  type: typeInput.value === 'income' ? 'income' : 'expense',
-  category: (categorySelect.value || '').trim(),   // <-- changed
-  description: (descInput.value || '').trim(),
-  amount: Number(amountInput.value),
-  userId: user.uid,
-  createdAt: serverTimestamp()
-};
-*/
 /* ---------------------------
    Filters & Export/Import events
 ---------------------------- */
