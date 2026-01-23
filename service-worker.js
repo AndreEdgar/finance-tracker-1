@@ -1,5 +1,5 @@
 
-cat > service-worker.js <<'JS'
+
 // service-worker.js — app-shell caching with safe update flow (no auto skipWaiting)
 
 const APP_CACHE = 'ft-app-v1';
@@ -112,4 +112,3 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
 });
-JS
