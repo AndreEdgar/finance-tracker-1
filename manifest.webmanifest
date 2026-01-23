@@ -1,5 +1,3 @@
-
-cat > manifest.webmanifest <<'JSON'
 {
   "name": "Finance Tracker",
   "short_name": "Finance",
@@ -17,4 +15,3 @@ cat > manifest.webmanifest <<'JSON'
   "categories": ["finance", "productivity"],
   "prefer_related_applications": false
 }
-JSON
