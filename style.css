@@ -220,6 +220,20 @@ td .badge {
 .update-banner.hidden { display: none; }
 .update-banner .primary.small { background: #2563eb; border: none; }
 
+#lockOverlay {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center;
+}
+
+#lockOverlay.hidden { display: none; }
+
+.lock-card {
+  background: #fff; border-radius: 12px; padding: 16px; width: 320px;
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0,0,0,.25);
+}
+
 /* Responsive adjustments */
 @media (max-width: 640px) {
   header .summary { grid-template-columns: 1fr; }

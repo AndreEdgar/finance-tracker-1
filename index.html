@@ -251,17 +251,28 @@
     
     <p>
       Signed in as <span id="userEmail"></span>
+      <button id="lockBtn" class="secondary small">Lock</button>
       <button id="logoutBtn" class="secondary small">Sign out</button>
+      <!-- Add inside your existing footer content -->
+      <button id="installBtn" class="secondary small" style="display:none">Install app</button>
     </p>
     
-    <!-- Add inside your existing footer content -->
-    <button id="installBtn" class="secondary small" style="display:none">Install app</button>
-
     <p>Data stored in Firestore (synced across devices) with offline caching via IndexedDB.</p>
     <p>Made with ❤️ in HTML, CSS & JS – no frameworks.</p>
   </footer>
 
-  
+  <div id="lockOverlay" class="hidden" aria-hidden="true">
+    <div class="lock-card">
+      <h3>Unlock</h3>
+      <p>Enter your 4-digit PIN to unlock.</p>
+      <input id="lockPinInput" type="password" inputmode="numeric" maxlength="4" placeholder="••••">
+      <div class="actions" style="margin-top:8px;">
+        <button id="unlockBtn" class="primary small">Unlock</button>
+        <button id="setPinBtn" class="secondary small">Set/Change PIN</button>
+      </div>
+      <p id="lockMsg" class="note"></p>
+    </div>
+  </div>
 
 
   <script type="module" src="app.js"></script>

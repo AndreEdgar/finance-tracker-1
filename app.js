@@ -1,13 +1,14 @@
 
-// app.js — Finance Tracker with Firebase Auth + Firestore (vanilla JS, no frameworks)
+// app.js — Finance Tracker with Firebase Auth + Firestore (vanilla JS)
 
-/* ---------------------------
+/* -------------------------------------------------
    Firebase (ES modules via CDN)
----------------------------- */
+-------------------------------------------------- */
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
 import {
   getAuth, onAuthStateChanged, signInWithEmailAndPassword,
-  createUserWithEmailAndPassword, signOut
+  createUserWithEmailAndPassword, signOut,
+  setPersistence, browserLocalPersistence
 } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
 import {
   getFirestore, collection, addDoc, doc, updateDoc, deleteDoc,
@@ -15,7 +16,9 @@ import {
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
 
-// Your web app's Firebase configuration
+/* -------------------------------------------------
+   Your Firebase project config
+-------------------------------------------------- */
 const firebaseConfig = {
   apiKey: "AIzaSyBbOaDJpvjl4InkWET2K7f0aBxGzCFjAcU",
   authDomain: "finance-tracker-1-1f2fe.firebaseapp.com",
@@ -31,71 +34,80 @@ const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
 const db = getFirestore(app);
 
-// Offline support: cache Firestore in IndexedDB so it works without internet
+// Enable Firestore offline (IndexedDB) caching
 enableIndexedDbPersistence(db).catch(() => {
-  // Fallback if multiple tabs or unsupported: it's fine, app still works online
+  // If multiple tabs are open or the browser doesn't support it, it's fine.
 });
 
-/* ---------------------------
+// Ensure Auth persistence is LOCAL (restores session offline)
+try {
+  await setPersistence(auth, browserLocalPersistence);
+} catch (e) {
+  console.warn('Auth persistence could not be set:', e);
+}
+
+/* -------------------------------------------------
    App state
----------------------------- */
-// If you prefer South African Rand, set 'R' or use Intl.NumberFormat:
+-------------------------------------------------- */
 const CURRENCY_SYMBOL = 'R';
-let transactions = [];   // {id, date, type, category, description, amount, userId, createdAt}
-let unsubscribe = null;  // Firestore listener
-let editingId = null;    // currently edited transaction id
+let transactions = [];        // {id, date, type, category, description, amount, userId, createdAt}
+let categories = [];          // {id, name, kind, userId, createdAt}
+let unsubscribe = null;       // transactions listener
+let unsubscribeCats = null;   // categories listener
+let editingId = null;
 
-/* ---------------------------
+/* -------------------------------------------------
    DOM helpers
----------------------------- */
+-------------------------------------------------- */
 const $ = (sel) => document.querySelector(sel);
-const appMain = $('#app');
-const appFooter = $('#appFooter');
-const authBox = $('#authBox');
-const authStatus = $('#authStatus');
-const userEmailEl = $('#userEmail');
 
-const emailInput = $('#email');
-const passwordInput = $('#password');
-const loginBtn = $('#loginBtn');
-const registerBtn = $('#registerBtn');
-const logoutBtn = $('#logoutBtn');
+const appMain      = $('#app');
+const appFooter    = $('#appFooter');
+const authBox      = $('#authBox');
+const authStatus   = $('#authStatus');
+const userEmailEl  = $('#userEmail');
 
-// Existing elements from your UI
-const totalIncomeEl = $('#totalIncome');
+const emailInput   = $('#email');
+const passwordInput= $('#password');
+const loginBtn     = $('#loginBtn');
+const registerBtn  = $('#registerBtn');
+const logoutBtn    = $('#logoutBtn');
+
+const totalIncomeEl  = $('#totalIncome');
 const totalExpenseEl = $('#totalExpense');
 const totalBalanceEl = $('#totalBalance');
 
-const form = $('#transactionForm');
-const formTitle = $('#formTitle');
+const form        = $('#transactionForm');
+const formTitle   = $('#formTitle');
 const cancelEditBtn = $('#cancelEdit');
 
-const dateInput = $('#date');
-const typeInput = $('#type');
-const categoryInput = $('#category');
+const dateInput   = $('#date');
+const typeInput   = $('#type');
+const categorySelect = $('#category');
 const amountInput = $('#amount');
-const descInput = $('#description');
+const descInput   = $('#description');
 
 const filterMonthInput = $('#filterMonth');
-const filterTypeInput = $('#filterType');
-const searchTextInput = $('#searchText');
+const filterTypeInput  = $('#filterType');
+const searchTextInput  = $('#searchText');
 
-const tbody = $('#transactionBody');
+const tbody       = $('#transactionBody');
 
-const exportJsonBtn = $('#exportJson');
-const exportCsvBtn = $('#exportCsv');
-const importJsonInput = $('#importJson');
+const exportJsonBtn  = $('#exportJson');
+const exportCsvBtn   = $('#exportCsv');
+const importJsonInput= $('#importJson');
 
-// Category dropdown + manager
-const categorySelect = document.querySelector('#category');
-const newCategoryNameInput = document.querySelector('#newCategoryName');
-const addCategoryBtn = document.querySelector('#addCategoryBtn');
-const categoryListDiv = document.querySelector('#categoryList');
-const newCategoryKindSelect = document.querySelector('#newCategoryKind');
+// Category manager
+const newCategoryNameInput = $('#newCategoryName');
+const newCategoryKindSelect = $('#newCategoryKind');
+const addCategoryBtn = $('#addCategoryBtn');
+const categoryListDiv = $('#categoryList');
 
-// --- Collapsible UI state (per-user) ---
+/* -------------------------------------------------
+   Collapsible UI state (per user)
+-------------------------------------------------- */
 const UI_STATE_STORAGE_KEY_PREFIX = 'finance.ui.v1.'; // + uid or 'anon'
-let uiState = { /* key -> boolean (true = collapsed) */ };
+let uiState = {};    // key -> boolean (true = collapsed)
 let uiStateKey = UI_STATE_STORAGE_KEY_PREFIX + 'anon';
 
 function loadUiState() {
@@ -104,46 +116,36 @@ function loadUiState() {
     uiState = raw ? JSON.parse(raw) : {};
   } catch { uiState = {}; }
 }
-
 function saveUiState() {
-  try {
-    localStorage.setItem(uiStateKey, JSON.stringify(uiState));
-  } catch {}
+  try { localStorage.setItem(uiStateKey, JSON.stringify(uiState)); } catch {}
 }
-
 function setCollapsed(key, collapsed) {
   uiState[key] = !!collapsed;
   saveUiState();
 }
-
 function getCollapsed(key, fallback = false) {
   return Object.prototype.hasOwnProperty.call(uiState, key) ? !!uiState[key] : fallback;
 }
 
-// Collapsible DOM hooks
 const collapsibleSections = [
-  { id: 'filtersCard',      key: 'filters',      btnSel: '.collapseBtn' },
-  { id: 'transactionsCard', key: 'transactions', btnSel: '.collapseBtn' },
-  { id: 'categoriesCard',   key: 'categories',   btnSel: '.collapseBtn' },
-  { id: 'backupCard',       key: 'backup',       btnSel: '.collapseBtn' }
+  { id: 'filtersCard',      key: 'filters'      },
+  { id: 'transactionsCard', key: 'transactions' },
+  { id: 'categoriesCard',   key: 'categories'   },
+  { id: 'backupCard',       key: 'backup'       }
 ];
+const collapseAllBtn = $('#collapseAll');
+const expandAllBtn   = $('#expandAll');
 
-const collapseAllBtn = document.querySelector('#collapseAll');
-const expandAllBtn   = document.querySelector('#expandAll');
-
-// Initialize one section
 function initCollapsible(sectionId, key) {
-  const el = document.getElementById(sectionId);
+  const el  = document.getElementById(sectionId);
   if (!el) return;
   const btn = el.querySelector('.collapseBtn');
   if (!btn) return;
 
-  // Apply saved state
   const shouldCollapse = getCollapsed(key, false);
   el.classList.toggle('collapsed', shouldCollapse);
   btn.setAttribute('aria-expanded', shouldCollapse ? 'false' : 'true');
 
-  // Toggle on click/keyboard
   const toggle = () => {
     const nowCollapsed = !el.classList.contains('collapsed');
     el.classList.toggle('collapsed', nowCollapsed);
@@ -156,10 +158,8 @@ function initCollapsible(sectionId, key) {
   });
 }
 
-// Initialize all sections
 function initAllCollapsibles() {
   collapsibleSections.forEach(s => initCollapsible(s.id, s.key));
-
   collapseAllBtn?.addEventListener('click', () => {
     collapsibleSections.forEach(({ id, key }) => {
       const el = document.getElementById(id);
@@ -170,7 +170,6 @@ function initAllCollapsibles() {
       setCollapsed(key, true);
     });
   });
-
   expandAllBtn?.addEventListener('click', () => {
     collapsibleSections.forEach(({ id, key }) => {
       const el = document.getElementById(id);
@@ -183,24 +182,81 @@ function initAllCollapsibles() {
   });
 }
 
-/* ---------------------------
-   Utility functions
----------------------------- */
+/* -------------------------------------------------
+   Utility helpers
+-------------------------------------------------- */
 function formatAmount(num) {
   const n = Number(num || 0);
   return `${CURRENCY_SYMBOL} ${n.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
-function uidLike() {
-  return 't_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+
+/* -------------------------------------------------
+   Local Lock (PIN) — keeps Firebase session; works offline
+-------------------------------------------------- */
+const lockBtn      = $('#lockBtn');
+const lockOverlay  = $('#lockOverlay');
+const lockPinInput = $('#lockPinInput');
+const unlockBtn    = $('#unlockBtn');
+const setPinBtn    = $('#setPinBtn');
+const lockMsg      = $('#lockMsg');
+
+const LOCK_KEY_PREFIX = 'finance.lock.pin.v1.';
+let lockKey = LOCK_KEY_PREFIX + 'anon';
+
+function setLockKeyByUser(user) {
+  lockKey = LOCK_KEY_PREFIX + (user?.uid || 'anon');
+}
+async function sha256(text) {
+  const enc = new TextEncoder().encode(text);
+  const buf = await crypto.subtle.digest('SHA-256', enc);
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+function showLock() {
+  lockOverlay?.classList.remove('hidden');
+  if (lockMsg) lockMsg.textContent = '';
+  if (lockPinInput) { lockPinInput.value = ''; lockPinInput.focus(); }
+}
+function hideLock() {
+  lockOverlay?.classList.add('hidden');
 }
 
-/* ---------------------------
+lockBtn?.addEventListener('click', () => showLock());
+
+unlockBtn?.addEventListener('click', async () => {
+  const pin = (lockPinInput?.value || '').trim();
+  if (!pin) { if (lockMsg) lockMsg.textContent = 'Enter PIN'; return; }
+  const stored = localStorage.getItem(lockKey);
+  if (!stored) { if (lockMsg) lockMsg.textContent = 'No PIN set. Click "Set/Change PIN".'; return; }
+  const hash = await sha256(pin);
+  if (hash === stored) hideLock(); else if (lockMsg) lockMsg.textContent = 'Incorrect PIN';
+});
+
+setPinBtn?.addEventListener('click', async () => {
+  const pin = prompt('Enter a new 4‑digit PIN (only stored as a hash on this device):','');
+  if (!pin) return;
+  if (!/^\d{4}$/.test(pin)) { alert('Use exactly 4 digits'); return; }
+  const hash = await sha256(pin);
+  localStorage.setItem(lockKey, hash);
+  alert('PIN set.');
+});
+
+/* -------------------------------------------------
    Auth handlers
----------------------------- */
+-------------------------------------------------- */
+function setAuthStatus(msg) {
+  if (authStatus) authStatus.textContent = msg;
+}
+
 loginBtn?.addEventListener('click', async () => {
-  const email = emailInput.value.trim();
-  const pass = passwordInput.value;
+  const email = (emailInput?.value || '').trim();
+  const pass = (passwordInput?.value || '');
   if (!email || !pass) return setAuthStatus('Enter email and password.');
+
+  // If offline and not signed in, block sign-in (needs network)
+  if (!navigator.onLine && !auth.currentUser) {
+    return setAuthStatus('No internet. Sign‑in requires a network connection.');
+  }
+
   try {
     await signInWithEmailAndPassword(auth, email, pass);
     setAuthStatus('');
@@ -209,10 +265,68 @@ loginBtn?.addEventListener('click', async () => {
   }
 });
 
-let categories = [];      // array of { id, name, userId, createdAt }
-let unsubscribeCats = null;
+registerBtn?.addEventListener('click', async () => {
+  const email = (emailInput?.value || '').trim();
+  const pass  = (passwordInput?.value || '');
+  if (!email || !pass) return setAuthStatus('Enter email and password.');
 
-// Start/stop categories realtime listener when user signs in/out
+  if (!navigator.onLine) {
+    return setAuthStatus('No internet. Account creation requires a network connection.');
+  }
+
+  try {
+    await createUserWithEmailAndPassword(auth, email, pass);
+    setAuthStatus('Account created. You are now signed in.');
+  } catch (e) {
+    setAuthStatus('Create failed: ' + e.message);
+  }
+});
+
+// Safer logout: warn that offline access will be lost until next online sign-in
+logoutBtn?.addEventListener('click', async () => {
+  const proceed = confirm('Signing out will disable offline access until you sign in again online. Continue?');
+  if (!proceed) return;
+  await signOut(auth);
+  if (emailInput) emailInput.value = "";
+  if (passwordInput) passwordInput.value = "";
+  if (authStatus) authStatus.textContent = "";
+});
+
+/* -------------------------------------------------
+   Realtime listeners
+-------------------------------------------------- */
+function startRealtime(user) {
+  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+  const q = query(
+    collection(db, 'transactions'),
+    where('userId', '==', user.uid),
+    orderBy('date', 'desc'),
+    orderBy('createdAt', 'desc')
+  );
+  unsubscribe = onSnapshot(q, (snap) => {
+    transactions = snap.docs.map(d => {
+      const data = d.data();
+      return {
+        id: d.id,
+        date: data.date || new Date().toISOString().slice(0,10),
+        type: data.type === 'income' ? 'income' : 'expense',
+        category: data.category || 'General',
+        description: data.description || '',
+        amount: Number(data.amount) || 0,
+        userId: data.userId
+      };
+    });
+    render();
+  }, (err) => {
+    console.error('[RT] error', err);
+    setAuthStatus('Could not load data: ' + err.message);
+  });
+}
+
+function stopRealtime() {
+  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
+}
+
 function startRealtimeCategories(user) {
   if (unsubscribeCats) { unsubscribeCats(); unsubscribeCats = null; }
   const cq = query(
@@ -226,7 +340,7 @@ function startRealtimeCategories(user) {
       return {
         id: d.id,
         name: data.name || '',
-        kind: data.kind || 'both',  // <- migrate old docs gracefully
+        kind: data.kind || 'both',
         userId: data.userId,
         createdAt: data.createdAt
       };
@@ -246,93 +360,18 @@ function stopRealtimeCategories() {
   renderCategoryList();
 }
 
-registerBtn?.addEventListener('click', async () => {
-  const email = emailInput.value.trim();
-  const pass = passwordInput.value;
-  if (!email || !pass) return setAuthStatus('Enter email and password.');
-  try {
-    await createUserWithEmailAndPassword(auth, email, pass);
-    setAuthStatus('Account created. You are now signed in.');
-  } catch (e) {
-    setAuthStatus('Create failed: ' + e.message);
-  }
-});
-
-//logoutBtn?.addEventListener('click', () => signOut(auth));
-
-logoutBtn?.addEventListener('click', async () => {
-  await signOut(auth);
-
-  // Clear login fields
-  emailInput.value = "";
-  passwordInput.value = "";
-
-  // Also clear status messages if any
-  if (authStatus) authStatus.textContent = "";
-
-  console.log("User signed out and fields cleared");
-});
-
-function setAuthStatus(msg) {
-  if (authStatus) authStatus.textContent = msg;
-}
-
-/* ---------------------------
-   Firestore listeners
----------------------------- */
-function startRealtime(user) {
-  // Stop previous listener
-  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
-
-  // Listen to current user's transactions, newest first
-  const q = query(
-    collection(db, 'transactions'),
-    where('userId', '==', user.uid),
-    orderBy('date', 'desc'),
-    orderBy('createdAt', 'desc')
-  );
-
-  unsubscribe = onSnapshot(q, (snap) => {
-    transactions = snap.docs.map(d => {
-      const data = d.data();
-      return {
-        id: d.id,
-        date: data.date || new Date().toISOString().slice(0,10),
-        type: data.type === 'income' ? 'income' : 'expense',
-        category: data.category || 'General',
-        description: data.description || '',
-        amount: Number(data.amount) || 0,
-        userId: data.userId
-      };
-    });
-    render();
-  }, (err) => {
-    console.error('Realtime error', err);
-    setAuthStatus('Could not load data: ' + err.message);
-  });
-}
-
-function stopRealtime() {
-  if (unsubscribe) { unsubscribe(); unsubscribe = null; }
-}
-
-
-// --- PWA: Service worker registration ---
+/* -------------------------------------------------
+   PWA: Service worker registration (update banner handled in index.js block)
+-------------------------------------------------- */
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    // Use relative path so it works on GitHub Pages subpath
     navigator.serviceWorker.register('./service-worker.js').then(reg => {
-      // Optional: auto-update when a new SW is waiting
-      if (reg.waiting) {
-        // A new SW is ready; you could show a "Reload to update" UI
-        console.log('A new version is ready. Reload to update.');
-      }
+      // If new SW is waiting, index.html banner JS will show "Update available"
       reg.addEventListener('updatefound', () => {
         const newWorker = reg.installing;
         newWorker?.addEventListener('statechange', () => {
           if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-            // New content available
-            console.log('Updated content available. Reload to update.');
+            console.log('Updated content available. Use update banner to reload.');
           }
         });
       });
@@ -340,47 +379,64 @@ if ('serviceWorker' in navigator) {
   });
 }
 
-// --- PWA: Install button (beforeinstallprompt) ---
+// Install button (Android/Chrome); iOS uses "Add to Home Screen"
 let deferredPrompt = null;
 const installBtn = document.getElementById('installBtn');
 
 window.addEventListener('beforeinstallprompt', (e) => {
-  // Prevent the mini-infobar on mobile
   e.preventDefault();
   deferredPrompt = e;
   if (installBtn) installBtn.style.display = 'inline-block';
 });
-
 installBtn?.addEventListener('click', async () => {
   if (!deferredPrompt) return;
   installBtn.style.display = 'none';
   deferredPrompt.prompt();
-  const { outcome } = await deferredPrompt.userChoice;
-  console.log('PWA install prompt outcome:', outcome);
+  await deferredPrompt.userChoice;
   deferredPrompt = null;
 });
-
-// Optional: hide the button when installed
 window.addEventListener('appinstalled', () => {
-  console.log('PWA installed');
   if (installBtn) installBtn.style.display = 'none';
 });
 
-/* ---------------------------
-   UI show/hide on auth state
----------------------------- */
+/* -------------------------------------------------
+   Auth state -> show/hide app + per-user UI/Lock
+-------------------------------------------------- */
+function updateLoginOfflineUI() {
+  const offline = !navigator.onLine;
+  const isSignedIn = !!auth.currentUser;
+  if (!loginBtn || !registerBtn || !authStatus) return;
+
+  if (offline && !isSignedIn) {
+    authStatus.textContent = 'No internet. Sign‑in requires a network connection.';
+    loginBtn.setAttribute('disabled', 'true');
+    registerBtn.setAttribute('disabled', 'true');
+  } else {
+    if (authStatus.textContent?.includes('No internet')) authStatus.textContent = '';
+    loginBtn.removeAttribute('disabled');
+    registerBtn.removeAttribute('disabled');
+  }
+}
+window.addEventListener('online', updateLoginOfflineUI);
+window.addEventListener('offline', updateLoginOfflineUI);
+
 onAuthStateChanged(auth, (user) => {
+  // Tie lock key to user or 'anon'
+  setLockKeyByUser(user);
+
   if (user) {
     // Show app
     authBox?.classList.add('hidden');
     appMain?.classList.remove('hidden');
     appFooter?.classList.remove('hidden');
     if (userEmailEl) userEmailEl.textContent = user.email || '(no email)';
+
     // Defaults
     dateInput.value = new Date().toISOString().slice(0, 10);
     filterMonthInput.value = new Date().toISOString().slice(0, 7);
     filterTypeInput.value = 'all';
-    // Start listening to data
+
+    // Start listeners
     startRealtime(user);
     startRealtimeCategories(user);
 
@@ -388,7 +444,6 @@ onAuthStateChanged(auth, (user) => {
     uiStateKey = UI_STATE_STORAGE_KEY_PREFIX + (user.uid || 'anon');
     loadUiState();
     initAllCollapsibles();
-
   } else {
     // Hide app
     stopRealtime();
@@ -396,26 +451,26 @@ onAuthStateChanged(auth, (user) => {
     appMain?.classList.add('hidden');
     appFooter?.classList.add('hidden');
     authBox?.classList.remove('hidden');
-    
-    
+
     // Clear fields on showing login box
-    emailInput.value = "";
-    passwordInput.value = "";
+    if (emailInput) emailInput.value = "";
+    if (passwordInput) passwordInput.value = "";
     if (authStatus) authStatus.textContent = "";
 
-    
     uiStateKey = UI_STATE_STORAGE_KEY_PREFIX + 'anon';
     loadUiState();
-    // Optionally reset UI for the login screen; not strictly necessary
 
     transactions = [];
     render();
   }
+
+  // Update login UI based on connectivity & session
+  updateLoginOfflineUI();
 });
 
-/* ---------------------------
-   Form & actions (same as before, but using Firestore)
----------------------------- */
+/* -------------------------------------------------
+   Form submit / Edit / Delete
+-------------------------------------------------- */
 form?.addEventListener('submit', async (e) => {
   e.preventDefault();
   const user = auth.currentUser;
@@ -424,7 +479,7 @@ form?.addEventListener('submit', async (e) => {
   const t = {
     date: dateInput.value,
     type: typeInput.value === 'income' ? 'income' : 'expense',
-    category: (categoryInput.value || '').trim(),
+    category: (categorySelect.value || '').trim(),
     description: (descInput.value || '').trim(),
     amount: Number(amountInput.value),
     userId: user.uid,
@@ -464,7 +519,6 @@ function resetForm() {
   typeInput.value = 'income';
 }
 
-
 function startEdit(id) {
   const t = transactions.find(x => x.id === id);
   if (!t) return;
@@ -475,10 +529,10 @@ function startEdit(id) {
   dateInput.value = t.date;
   typeInput.value = t.type;
 
-  // Render options based on the transaction's type
+  // Ensure category options reflect type
   renderCategoryOptions(typeInput.value);
 
-  // If the category isn't in filtered options (because its kind doesn't match), add a temporary option
+  // If the stored category is not valid for current type, add a temp option
   if (categorySelect) {
     const hasOpt = [...categorySelect.options].some(o => o.value === t.category);
     if (!hasOpt && t.category) {
@@ -495,9 +549,10 @@ function startEdit(id) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
-
+/* -------------------------------------------------
+   Categories (type-specific)
+-------------------------------------------------- */
 function getCategoriesForType(currentType) {
-  // Show categories where kind == currentType or kind == 'both'
   return categories.filter(c => c.kind === 'both' || c.kind === currentType);
 }
 
@@ -506,7 +561,6 @@ function renderCategoryOptions(currentType = 'income') {
   const valid = getCategoriesForType(currentType);
 
   categorySelect.innerHTML = '';
-
   if (valid.length === 0) {
     const ph = document.createElement('option');
     ph.value = '';
@@ -532,10 +586,8 @@ function renderCategoryOptions(currentType = 'income') {
   }
 }
 
-// When the user changes Type (Income/Expense), refresh dropdown
 typeInput?.addEventListener('change', () => {
   renderCategoryOptions(typeInput.value);
-  // If previously selected category is invalid for new type, clear selection
   if (categorySelect && categorySelect.value) {
     const stillValid = getCategoriesForType(typeInput.value)
       .some(c => c.name === categorySelect.value);
@@ -543,20 +595,41 @@ typeInput?.addEventListener('change', () => {
   }
 });
 
+addCategoryBtn?.addEventListener('click', async () => {
+  const user = auth.currentUser;
+  if (!user) return setAuthStatus('Please sign in.');
 
-/* ---------------------------
+  const name = (newCategoryNameInput.value || '').trim();
+  const kind = newCategoryKindSelect.value || 'both';
+  if (!name) return alert('Please enter a category name.');
+
+  // Prevent duplicates by name (case-insensitive), regardless of kind
+  const exists = categories.some(c => c.name.toLowerCase() === name.toLowerCase());
+  if (exists) return alert('This category name already exists.');
+
+  try {
+    await addDoc(collection(db, 'categories'), {
+      name, kind, userId: user.uid, createdAt: serverTimestamp()
+    });
+    newCategoryNameInput.value = '';
+    renderCategoryOptions(typeInput.value);
+  } catch (e) {
+    alert('Add category failed: ' + e.message);
+  }
+});
+
+/* -------------------------------------------------
    Rendering & filters
----------------------------- */
+-------------------------------------------------- */
 function applyFilters(list) {
   const month = filterMonthInput.value; // "YYYY-MM"
-  const type = filterTypeInput.value;   // 'all'|'income'|'expense'
-  const qtxt = (searchTextInput.value || '').trim().toLowerCase();
+  const type  = filterTypeInput.value;  // 'all'|'income'|'expense'
+  const qtxt  = (searchTextInput.value || '').trim().toLowerCase();
+
   return list.filter(t => {
     const matchesMonth = month ? t.date.startsWith(month) : true;
-    const matchesType = type === 'all' ? true : t.type === type;
-    const matchesText = qtxt
-      ? (t.category.toLowerCase().includes(qtxt) || (t.description || '').toLowerCase().includes(qtxt))
-      : true;
+    const matchesType  = type === 'all' ? true : t.type === type;
+    const matchesText  = qtxt ? (t.category.toLowerCase().includes(qtxt) || (t.description || '').toLowerCase().includes(qtxt)) : true;
     return matchesMonth && matchesType && matchesText;
   });
 }
@@ -571,9 +644,9 @@ function computeTotals(list) {
 
 function render() {
   const filtered = applyFilters(transactions);
-
   const { income, expense, balance } = computeTotals(filtered);
-  if (totalIncomeEl) totalIncomeEl.textContent = formatAmount(income);
+
+  if (totalIncomeEl)  totalIncomeEl.textContent  = formatAmount(income);
   if (totalExpenseEl) totalExpenseEl.textContent = formatAmount(expense);
   if (totalBalanceEl) totalBalanceEl.textContent = formatAmount(balance);
 
@@ -681,7 +754,6 @@ function renderCategoryList() {
     kindSel.addEventListener('change', async () => {
       try {
         await updateDoc(doc(db, 'categories', c.id), { kind: kindSel.value });
-        // Re-render dropdown in case current type was affected
         renderCategoryOptions(typeInput.value);
       } catch (e) {
         alert('Update kind failed: ' + e.message);
@@ -705,6 +777,7 @@ function renderCategoryList() {
     });
 
     tdActions.appendChild(delBtn);
+
     tr.appendChild(tdName);
     tr.appendChild(tdKind);
     tr.appendChild(tdActions);
@@ -715,43 +788,19 @@ function renderCategoryList() {
   categoryListDiv.appendChild(table);
 }
 
-addCategoryBtn?.addEventListener('click', async () => {
-  const user = auth.currentUser;
-  if (!user) return setAuthStatus('Please sign in.');
-
-  const name = (newCategoryNameInput.value || '').trim();
-  const kind = newCategoryKindSelect.value || 'both';
-  if (!name) return alert('Please enter a category name.');
-
-  // Prevent duplicates by name (case-insensitive), regardless of kind
-  const exists = categories.some(c => c.name.toLowerCase() === name.toLowerCase());
-  if (exists) return alert('This category name already exists.');
-
-  try {
-    await addDoc(collection(db, 'categories'), {
-      name, kind, userId: user.uid, createdAt: serverTimestamp()
-    });
-    // Clear and refresh
-    newCategoryNameInput.value = '';
-    // If kind matches current type, keep dropdown populated
-    renderCategoryOptions(typeInput.value);
-  } catch (e) {
-    alert('Add category failed: ' + e.message);
-  }
-});
-
-/* ---------------------------
+/* -------------------------------------------------
    Filters & Export/Import events
----------------------------- */
+-------------------------------------------------- */
 filterMonthInput?.addEventListener('input', render);
 filterTypeInput?.addEventListener('change', render);
 searchTextInput?.addEventListener('input', render);
 
-// Export JSON uses the in-memory list (already loaded from Firestore)
+// Export JSON
 exportJsonBtn?.addEventListener('click', () => {
   downloadBlob('transactions.json', 'application/json', JSON.stringify(transactions, null, 2));
 });
 
+// Export CSV
 exportCsvBtn?.addEventListener('click', () => {
   const header = ['id','date','type','category','description','amount'];
   const rows = transactions.map(t => ([
@@ -766,10 +815,11 @@ exportCsvBtn?.addEventListener('click', () => {
   }
 });
 
-// Import JSON: create docs for current user
+// Import JSON
 importJsonInput?.addEventListener('change', async (ev) => {
   const file = ev.target.files?.[0];
   if (!file) return;
+
   const user = auth.currentUser;
   if (!user) return setAuthStatus('Please sign in.');
 
@@ -777,6 +827,7 @@ importJsonInput?.addEventListener('change', async (ev) => {
   try {
     const data = JSON.parse(text);
     if (!Array.isArray(data)) throw new Error('Invalid JSON (expected an array).');
+
     for (const t of data) {
       const docData = {
         date: t.date || new Date().toISOString().slice(0,10),
@@ -797,9 +848,9 @@ importJsonInput?.addEventListener('change', async (ev) => {
   }
 });
 
-/* ---------------------------
+/* -------------------------------------------------
    Small helpers
----------------------------- */
+-------------------------------------------------- */
 function downloadBlob(filename, mime, text) {
   const blob = new Blob([text], { type: mime });
   const url = URL.createObjectURL(blob);
